@@ -1,0 +1,13 @@
+*.iml
+.gradle/
+.idea/
+build/
+local.properties
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+*.log
+hs_err_pid*.log
+hs_err_pid*.mdmp
+replay_pid*.log
