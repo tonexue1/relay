@@ -20,6 +20,10 @@ android {
                 arguments(
                     // Keep llama.cpp optimized even for app debug installs.
                     "-DCMAKE_BUILD_TYPE=Release",
+                    // One compiler process at a time: parallel clang jobs over ggml
+                    // exhaust the Windows commit limit and kill the Gradle daemon.
+                    // Matches org.gradle.workers.max in gradle.properties.
+                    "-DCMAKE_BUILD_PARALLEL_LEVEL=1",
                     "-DBUILD_SHARED_LIBS=OFF",
                     "-DGGML_OPENMP=OFF",
                     "-DGGML_NATIVE=OFF",
