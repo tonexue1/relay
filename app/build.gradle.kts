@@ -50,6 +50,7 @@ android {
 
 dependencies {
     implementation(project(":relay-llm"))
+    implementation(project(":relay-ondevice"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

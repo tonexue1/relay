@@ -35,7 +35,7 @@ enum class RelayModule(
     OnDevice(
         artifact = "relay-ondevice",
         summary = "端侧推理 Provider:llama.cpp via JNI,与云端 Provider 同一接口",
-        available = false,
+        available = true,
     ),
     AgentCore(
         artifact = "relay-agent-core",

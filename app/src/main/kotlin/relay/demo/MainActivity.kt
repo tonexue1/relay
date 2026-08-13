@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import relay.demo.home.ModuleHomeScreen
 import relay.demo.home.RelayModule
 import relay.demo.llm.LlmTestScreen
+import relay.demo.ondevice.OnDeviceTestScreen
 import relay.demo.theme.RelayDemoTheme
 
 class MainActivity : ComponentActivity() {
@@ -28,8 +29,8 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * One screen per Relay module. Only `relay-llm` exists today; the rest are listed as
- * disabled entries so the shape of the runtime stays visible as modules land.
+ * One screen per Relay module. `relay-llm` and `relay-ondevice` are live; the rest stay
+ * listed as disabled entries so the runtime shape remains visible as modules land.
  */
 @Composable
 private fun RelayDemoApp() {
@@ -37,6 +38,7 @@ private fun RelayDemoApp() {
 
     when (openModule) {
         RelayModule.Llm -> LlmTestScreen(onBack = { openModule = null })
+        RelayModule.OnDevice -> OnDeviceTestScreen(onBack = { openModule = null })
         else -> ModuleHomeScreen(onOpenModule = { openModule = it })
     }
 }

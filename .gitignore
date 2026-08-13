@@ -11,3 +11,11 @@ captures/
 hs_err_pid*.log
 hs_err_pid*.mdmp
 replay_pid*.log
+
+# Local interview prep (do not commit)
+interview/
+
+# Downloaded on-device GGUF weights (local only)
+*.gguf
+*.gguf.partial
+
