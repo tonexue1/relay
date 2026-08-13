@@ -13,6 +13,7 @@ import relay.llm.model.ChatChunk
 import relay.llm.model.ChatRequest
 import relay.llm.model.Message
 import relay.llm.model.ToolDef
+import relay.ondevice.cpu.CpuPlan
 import relay.ondevice.engine.GenerateResult
 import relay.ondevice.engine.LlamaEngine
 
@@ -114,7 +115,7 @@ private class FakeLlamaEngine(
 
     override val isLoaded: Boolean get() = loaded
 
-    override fun load(modelPath: String, nCtx: Int, nThreads: Int) {
+    override fun load(modelPath: String, nCtx: Int, cpu: CpuPlan) {
         loaded = true
         cancelled = false
     }

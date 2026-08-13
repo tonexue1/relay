@@ -20,6 +20,8 @@ import relay.llm.model.FinishReason
 import relay.llm.model.ModelInfo
 import relay.llm.model.ProviderInfo
 import relay.llm.model.Usage
+import relay.ondevice.cpu.CpuPlan
+import relay.ondevice.cpu.CpuTopology
 import relay.ondevice.engine.GenerateResult
 import relay.ondevice.engine.LlamaEngine
 import relay.ondevice.model.ModelSpec
@@ -54,8 +56,8 @@ class OnDeviceProvider(
         ),
     )
 
-    fun load(modelPath: String, nCtx: Int = 4096, nThreads: Int = 4) {
-        engine.load(modelPath, nCtx = nCtx, nThreads = nThreads)
+    fun load(modelPath: String, nCtx: Int = 4096, cpu: CpuPlan = CpuTopology.plan()) {
+        engine.load(modelPath, nCtx = nCtx, cpu = cpu)
     }
 
     fun unload() {

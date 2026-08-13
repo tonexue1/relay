@@ -1,6 +1,7 @@
 package relay.ondevice.engine
 
 import android.util.Log
+import relay.ondevice.cpu.CpuPlan
 
 /**
  * JNI-backed [LlamaEngine] wrapping `librelay_llama.so` (llama.cpp, arm64 CPU).
@@ -18,8 +19,9 @@ class JniLlamaEngine : LlamaEngine {
 
     override val isLoaded: Boolean get() = loaded
 
-    override fun load(modelPath: String, nCtx: Int, nThreads: Int) {
-        check(nativeLoad(modelPath, nCtx, nThreads)) {
+    override fun load(modelPath: String, nCtx: Int, cpu: CpuPlan) {
+        Log.i(TAG, "load: threads=${cpu.threadCount} cores=${cpu.coreIndices}")
+        check(nativeLoad(modelPath, nCtx, cpu.threadCount, cpu.coreIndices.toIntArray())) {
             "Failed to load GGUF at $modelPath"
         }
         loaded = true
@@ -76,7 +78,16 @@ class JniLlamaEngine : LlamaEngine {
         fun onToken(bytes: ByteArray)
     }
 
-    private external fun nativeLoad(modelPath: String, nCtx: Int, nThreads: Int): Boolean
+    /**
+     * [cpuIndices] pins one worker per listed CPU; an empty array leaves placement to
+     * the scheduler.
+     */
+    private external fun nativeLoad(
+        modelPath: String,
+        nCtx: Int,
+        nThreads: Int,
+        cpuIndices: IntArray,
+    ): Boolean
     private external fun nativeUnload()
     private external fun nativeCancel()
     private external fun nativeGenerate(

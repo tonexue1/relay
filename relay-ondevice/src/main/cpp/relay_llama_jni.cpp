@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "ggml.h"
+#include "ggml-cpu.h"
 #include "llama.h"
 
 #define LOG_TAG "relay_llama"
@@ -19,6 +21,7 @@ namespace {
 struct EngineState {
     llama_model * model = nullptr;
     llama_context * ctx = nullptr;
+    ggml_threadpool_t pool = nullptr;
     std::atomic<bool> cancel{false};
     std::mutex mu;
 };
@@ -46,14 +49,62 @@ std::string jstring_to_utf8(JNIEnv * env, jstring value) {
 
 void free_loaded_locked() {
     if (g_state.ctx != nullptr) {
+        llama_detach_threadpool(g_state.ctx);
         llama_free(g_state.ctx);
         g_state.ctx = nullptr;
+    }
+    // Outlives the context on purpose: detaching first guarantees no graph is still
+    // referencing the pool when its worker threads are joined.
+    if (g_state.pool != nullptr) {
+        ggml_threadpool_free(g_state.pool);
+        g_state.pool = nullptr;
     }
     if (g_state.model != nullptr) {
         llama_model_free(g_state.model);
         g_state.model = nullptr;
     }
     g_state.cancel.store(false);
+}
+
+/**
+ * Builds the ggml threadpool that runs every graph.
+ *
+ * The default pool inherits whatever affinity the calling thread had, which lets the
+ * kernel park workers on efficiency cores. That is pathological for ggml: its
+ * per-operator barrier is an unbounded spin loop, so one slow or descheduled worker
+ * makes every other worker burn a full timeslice spinning. Pinning one worker per
+ * performance core removes both the slow stragglers and the risk of two spinning
+ * workers colliding on a single core.
+ */
+ggml_threadpool_t make_threadpool_locked(JNIEnv * env, int n_threads, jintArray cpu_indices) {
+    ggml_threadpool_params tpp;
+    ggml_threadpool_params_init(&tpp, n_threads);
+
+    const jsize n_idx = cpu_indices != nullptr ? env->GetArrayLength(cpu_indices) : 0;
+    if (n_idx > 0) {
+        std::vector<jint> indices(static_cast<size_t>(n_idx));
+        env->GetIntArrayRegion(cpu_indices, 0, n_idx, indices.data());
+        bool any = false;
+        for (const jint cpu : indices) {
+            if (cpu >= 0 && cpu < GGML_MAX_N_THREADS) {
+                tpp.cpumask[cpu] = true;
+                any = true;
+            }
+        }
+        // Strict placement hands each worker its own core instead of letting them all
+        // float across the mask, which two spin-waiting workers must never do.
+        tpp.strict_cpu = any;
+    }
+
+    // SCHED_FIFO is unavailable to unprivileged Android apps, so anything above NORMAL
+    // only produces a failed pthread_setschedparam and a warning.
+    tpp.prio = GGML_SCHED_PRIO_NORMAL;
+
+    // Start paused: ggml applies worker 0's affinity to whichever thread drives the
+    // first kickoff, and that is the generate thread, not this one.
+    tpp.paused = true;
+
+    return ggml_threadpool_new(&tpp);
 }
 
 std::string token_to_piece(const llama_vocab * vocab, llama_token token) {
@@ -105,7 +156,8 @@ Java_relay_ondevice_engine_JniLlamaEngine_nativeLoad(
         jobject /* thiz */,
         jstring model_path,
         jint n_ctx,
-        jint n_threads) {
+        jint n_threads,
+        jintArray cpu_indices) {
     ensure_backend();
     const std::string path = jstring_to_utf8(env, model_path);
     if (path.empty()) {
@@ -140,7 +192,19 @@ Java_relay_ondevice_engine_JniLlamaEngine_nativeLoad(
         return JNI_FALSE;
     }
 
-    LOGI("nativeLoad: loaded %s (n_ctx=%u threads=%d)", path.c_str(), cparams.n_ctx, cparams.n_threads);
+    g_state.pool = make_threadpool_locked(env, cparams.n_threads, cpu_indices);
+    if (g_state.pool == nullptr) {
+        // Not fatal: llama falls back to a disposable pool with default placement.
+        LOGE("nativeLoad: threadpool creation failed, using default placement");
+    } else {
+        llama_attach_threadpool(g_state.ctx, g_state.pool, g_state.pool);
+    }
+
+    LOGI("nativeLoad: loaded %s (n_ctx=%u threads=%d pinned=%d)",
+         path.c_str(),
+         cparams.n_ctx,
+         cparams.n_threads,
+         cpu_indices != nullptr ? env->GetArrayLength(cpu_indices) : 0);
     return JNI_TRUE;
 }
 
@@ -195,6 +259,17 @@ Java_relay_ondevice_engine_JniLlamaEngine_nativeGenerate(
     }
 
     g_state.cancel.store(false);
+
+    // Each stream runs on a fresh thread, and ggml only applies worker 0's affinity on
+    // the kickoff that follows a pause. Re-arming on the way out keeps every generation
+    // pinned, not just the first one.
+    struct PausePoolOnExit {
+        ~PausePoolOnExit() {
+            if (g_state.pool != nullptr) {
+                ggml_threadpool_pause(g_state.pool);
+            }
+        }
+    } pause_guard;
 
     llama_model * model = g_state.model;
     llama_context * ctx = g_state.ctx;

@@ -1,5 +1,8 @@
 package relay.ondevice.engine
 
+import relay.ondevice.cpu.CpuPlan
+import relay.ondevice.cpu.CpuTopology
+
 /**
  * Thin native inference surface. Implementations may be JNI-backed or fakes for tests.
  *
@@ -10,7 +13,7 @@ package relay.ondevice.engine
 interface LlamaEngine {
     val isLoaded: Boolean
 
-    fun load(modelPath: String, nCtx: Int = 4096, nThreads: Int = 4)
+    fun load(modelPath: String, nCtx: Int = 4096, cpu: CpuPlan = CpuTopology.plan())
 
     fun unload()
 

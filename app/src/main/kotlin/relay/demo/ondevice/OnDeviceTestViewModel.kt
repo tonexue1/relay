@@ -24,6 +24,7 @@ import relay.llm.model.ChatChunk
 import relay.llm.model.ChatRequest
 import relay.llm.model.Message
 import relay.ondevice.OnDeviceProvider
+import relay.ondevice.cpu.CpuTopology
 import relay.ondevice.engine.JniLlamaEngine
 import relay.ondevice.model.ModelStore
 import relay.ondevice.model.OnDeviceModels
@@ -122,14 +123,13 @@ class OnDeviceTestViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             try {
                 val path = store.localFile(modelSpec).absolutePath
-                // Use all cores for decode; UI work is light and already off the inference threads.
-                val threads = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+                val cpu = CpuTopology.plan()
                 withContext(Dispatchers.IO) {
                     // Cap context for phone RAM; full 32k is unnecessary for the demo.
-                    provider.load(path, nCtx = 2048, nThreads = threads)
+                    provider.load(path, nCtx = 2048, cpu = cpu)
                 }
                 _uiState.update { it.copy(modelLoaded = true, loadingModel = false, error = null) }
-                appendLog("loaded $path (threads=$threads)")
+                appendLog("loaded $path (threads=${cpu.threadCount} cores=${cpu.coreIndices})")
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(loadingModel = false, error = e.message ?: "load failed")
