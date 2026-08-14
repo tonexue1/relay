@@ -160,7 +160,9 @@ fun OnDeviceTestScreen(
             if (state.latencyMs != null || state.usageLabel.isNotEmpty()) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        state.prefillMs?.let { Text("Prefill: ${it} ms", fontFamily = FontFamily.Monospace) }
                         state.ttftMs?.let { Text("TTFT: ${it} ms", fontFamily = FontFamily.Monospace) }
+                        state.decodeMs?.let { Text("Decode: ${it} ms", fontFamily = FontFamily.Monospace) }
                         state.latencyMs?.let { Text("Latency: ${it} ms", fontFamily = FontFamily.Monospace) }
                         if (state.usageLabel.isNotEmpty()) {
                             Text("Usage: ${state.usageLabel}", fontFamily = FontFamily.Monospace)

@@ -23,6 +23,7 @@ import relay.llm.model.Usage
 import relay.ondevice.cpu.CpuPlan
 import relay.ondevice.cpu.CpuTopology
 import relay.ondevice.engine.GenerateResult
+import relay.ondevice.engine.GenerateTimings
 import relay.ondevice.engine.LlamaEngine
 import relay.ondevice.model.ModelSpec
 import relay.ondevice.model.OnDeviceModels
@@ -150,7 +151,13 @@ class OnDeviceProvider(
                     } else {
                         FinishReason.STOP
                     }
-                    emit(ChatChunk.Done(usage = usage, finishReason = finish))
+                    emit(
+                        ChatChunk.Done(
+                            usage = usage,
+                            finishReason = finish,
+                            extra = result.timings.toExtra(),
+                        ),
+                    )
                 }
             }
         } finally {
@@ -180,7 +187,19 @@ class OnDeviceProvider(
 
     private data class TokenPiece(val text: String)
 
+    private fun GenerateTimings?.toExtra(): Map<String, String> {
+        if (this == null) return emptyMap()
+        return mapOf(
+            EXTRA_PREFILL_MS to prefillMs.toString(),
+            EXTRA_TTFT_MS to ttftMs.toString(),
+            EXTRA_DECODE_MS to decodeMs.toString(),
+        )
+    }
+
     companion object {
         const val PROVIDER_ID = "ondevice-qwen"
+        const val EXTRA_PREFILL_MS = "prefillMs"
+        const val EXTRA_TTFT_MS = "ttftMs"
+        const val EXTRA_DECODE_MS = "decodeMs"
     }
 }

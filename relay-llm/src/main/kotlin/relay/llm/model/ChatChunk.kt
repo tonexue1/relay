@@ -9,5 +9,6 @@ sealed interface ChatChunk {
     data class Done(
         val usage: Usage? = null,
         val finishReason: FinishReason = FinishReason.STOP,
+        val extra: Map<String, String> = emptyMap(),
     ) : ChatChunk
 }

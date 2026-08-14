@@ -28,10 +28,18 @@ interface LlamaEngine {
     ): GenerateResult
 }
 
+/** Wall-clock slices measured inside the native generate loop. */
+data class GenerateTimings(
+    val prefillMs: Long,
+    val ttftMs: Long,
+    val decodeMs: Long,
+)
+
 sealed class GenerateResult {
     data class Ok(
         val promptTokens: Int,
         val completionTokens: Int,
+        val timings: GenerateTimings? = null,
     ) : GenerateResult()
 
     data object Cancelled : GenerateResult()

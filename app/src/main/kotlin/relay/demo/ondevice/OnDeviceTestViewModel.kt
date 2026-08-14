@@ -45,6 +45,8 @@ data class OnDeviceUiState(
     val usageLabel: String = "",
     val latencyMs: Long? = null,
     val ttftMs: Long? = null,
+    val prefillMs: Long? = null,
+    val decodeMs: Long? = null,
     val logs: List<String> = emptyList(),
 ) {
     val canDownload: Boolean get() = !downloading && !modelReady
@@ -161,6 +163,8 @@ class OnDeviceTestViewModel(application: Application) : AndroidViewModel(applica
                 usageLabel = "",
                 latencyMs = null,
                 ttftMs = null,
+                prefillMs = null,
+                decodeMs = null,
             )
         }
 
@@ -183,11 +187,23 @@ class OnDeviceTestViewModel(application: Application) : AndroidViewModel(applica
                             is ChatChunk.ToolCalls -> Unit
                             is ChatChunk.Done -> {
                                 val usage = chunk.usage
+                                val prefill = chunk.extra[OnDeviceProvider.EXTRA_PREFILL_MS]?.toLongOrNull()
+                                val nativeTtft = chunk.extra[OnDeviceProvider.EXTRA_TTFT_MS]?.toLongOrNull()
+                                val decode = chunk.extra[OnDeviceProvider.EXTRA_DECODE_MS]?.toLongOrNull()
+                                if (prefill != null || nativeTtft != null || decode != null) {
+                                    appendLog(
+                                        "native timings prefill=${prefill ?: "n/a"}ms " +
+                                            "ttft=${nativeTtft ?: "n/a"}ms decode=${decode ?: "n/a"}ms",
+                                    )
+                                }
                                 _uiState.update {
                                     it.copy(
                                         usageLabel = usage?.let { u ->
                                             "prompt=${u.promptTokens} completion=${u.completionTokens}"
                                         }.orEmpty(),
+                                        prefillMs = prefill,
+                                        ttftMs = nativeTtft ?: it.ttftMs,
+                                        decodeMs = decode,
                                     )
                                 }
                             }
@@ -219,12 +235,14 @@ class OnDeviceTestViewModel(application: Application) : AndroidViewModel(applica
                 _uiState.update { it.copy(error = e.message ?: "inference failed") }
             } finally {
                 val totalMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
-                val ttft = firstTokenAt?.let { TimeUnit.NANOSECONDS.toMillis(it - started) }
+                val wallTtft = firstTokenAt?.let { TimeUnit.NANOSECONDS.toMillis(it - started) }
                 _uiState.update {
                     it.copy(
                         running = false,
                         latencyMs = it.latencyMs ?: totalMs,
-                        ttftMs = ttft,
+                        // Native TTFT wins when present; wall-clock is the fallback
+                        // for unary calls and for streams that never reached Done.
+                        ttftMs = it.ttftMs ?: wallTtft,
                     )
                 }
             }

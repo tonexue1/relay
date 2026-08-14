@@ -45,6 +45,7 @@ class JniLlamaEngine : LlamaEngine {
     ): GenerateResult {
         check(loaded) { "Model is not loaded" }
         val decoder = Utf8PieceDecoder()
+        val timingsNs = LongArray(3)
         val packed = nativeGenerate(
             prompt = prompt,
             maxTokens = maxTokens,
@@ -55,20 +56,23 @@ class JniLlamaEngine : LlamaEngine {
                     decoder.push(bytes)?.let(onToken)
                 }
             },
+            timingsNs = timingsNs,
         )
         decoder.finish()?.let(onToken)
 
-        return when {
-            packed == -100 -> GenerateResult.Cancelled
-            packed < 0 -> {
-                Log.e(TAG, "nativeGenerate failed with code $packed")
-                GenerateResult.Failed(packed, "nativeGenerate failed with code $packed")
+        val result = NativeGenerateCodec.unpack(packed, timingsNs)
+        when (result) {
+            is GenerateResult.Failed -> Log.e(TAG, result.message)
+            is GenerateResult.Ok -> result.timings?.let { t ->
+                Log.i(
+                    TAG,
+                    "timings prefill=${t.prefillMs}ms ttft=${t.ttftMs}ms decode=${t.decodeMs}ms " +
+                        "prompt=${result.promptTokens} completion=${result.completionTokens}",
+                )
             }
-            else -> GenerateResult.Ok(
-                promptTokens = (packed ushr 16) and 0xFFFF,
-                completionTokens = packed and 0xFFFF,
-            )
+            GenerateResult.Cancelled -> Unit
         }
+        return result
     }
 
     /**
@@ -96,6 +100,7 @@ class JniLlamaEngine : LlamaEngine {
         temperature: Float,
         topP: Float,
         callback: TokenCallback,
+        timingsNs: LongArray,
     ): Int
 
     companion object {

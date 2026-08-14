@@ -15,6 +15,7 @@ import relay.llm.model.Message
 import relay.llm.model.ToolDef
 import relay.ondevice.cpu.CpuPlan
 import relay.ondevice.engine.GenerateResult
+import relay.ondevice.engine.GenerateTimings
 import relay.ondevice.engine.LlamaEngine
 
 class OnDeviceProviderTest {
@@ -41,6 +42,32 @@ class OnDeviceProviderTest {
         val done = chunks.filterIsInstance<ChatChunk.Done>().single()
         assertEquals(12, done.usage?.promptTokens)
         assertEquals(3, done.usage?.completionTokens)
+        assertTrue(done.extra.isEmpty())
+    }
+
+    @Test
+    fun streamForwardsNativeTimingsOnDone() = runTest {
+        val engine = FakeLlamaEngine(
+            pieces = listOf("ok"),
+            result = GenerateResult.Ok(
+                promptTokens = 8,
+                completionTokens = 1,
+                timings = GenerateTimings(prefillMs = 120, ttftMs = 135, decodeMs = 800),
+            ),
+        )
+        engine.load("/tmp/fake.gguf")
+        val provider = OnDeviceProvider(engine)
+
+        val done = provider.stream(
+            ChatRequest(
+                model = "qwen2.5-0.5b-instruct",
+                messages = listOf(Message.user("hi")),
+            ),
+        ).toList().filterIsInstance<ChatChunk.Done>().single()
+
+        assertEquals("120", done.extra[OnDeviceProvider.EXTRA_PREFILL_MS])
+        assertEquals("135", done.extra[OnDeviceProvider.EXTRA_TTFT_MS])
+        assertEquals("800", done.extra[OnDeviceProvider.EXTRA_DECODE_MS])
     }
 
     @Test

@@ -3,7 +3,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <cstring>
+#include <time.h>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -122,6 +124,20 @@ std::string token_to_piece(const llama_vocab * vocab, llama_token token) {
     return std::string(buf, static_cast<size_t>(n));
 }
 
+int64_t now_ns() {
+    struct timespec ts {};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<int64_t>(ts.tv_sec) * 1000000000LL + static_cast<int64_t>(ts.tv_nsec);
+}
+
+void write_timings(JNIEnv * env, jlongArray out, int64_t prefill_ns, int64_t ttft_ns, int64_t decode_ns) {
+    if (env == nullptr || out == nullptr || env->GetArrayLength(out) < 3) {
+        return;
+    }
+    const jlong values[3] = {prefill_ns, ttft_ns, decode_ns};
+    env->SetLongArrayRegion(out, 0, 3, values);
+}
+
 bool emit_bytes(JNIEnv * env, jobject callback, jmethodID on_token, const std::string & piece) {
     if (piece.empty()) {
         return true;
@@ -231,7 +247,8 @@ Java_relay_ondevice_engine_JniLlamaEngine_nativeGenerate(
         jint max_tokens,
         jfloat temperature,
         jfloat top_p,
-        jobject callback) {
+        jobject callback,
+        jlongArray timings_ns) {
     if (callback == nullptr) {
         LOGE("nativeGenerate: null callback");
         return -1;
@@ -321,10 +338,29 @@ Java_relay_ondevice_engine_JniLlamaEngine_nativeGenerate(
     llama_sampler_chain_add(smpl, llama_sampler_init_temp(temp));
     llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
+    // Wall-clock slices, flushed on every exit after this point:
+    //   prefill = prompt llama_decode only
+    //   ttft    = t0 -> first sampled non-EOG token (includes prefill + first sample)
+    //   decode  = first token -> last generation llama_decode (subsequent tokens)
+    int64_t prefill_ns = 0;
+    int64_t ttft_ns = 0;
+    int64_t decode_ns = 0;
+    int64_t t_first = 0;
+    struct FlushTimings {
+        JNIEnv * env;
+        jlongArray out;
+        int64_t * prefill;
+        int64_t * ttft;
+        int64_t * decode;
+        ~FlushTimings() { write_timings(env, out, *prefill, *ttft, *decode); }
+    } flush{env, timings_ns, &prefill_ns, &ttft_ns, &decode_ns};
+
     // Prefill the prompt in n_batch-sized chunks (not one token per decode).
     const int32_t n_batch = static_cast<int32_t>(llama_n_batch(ctx));
+    const int64_t t0 = now_ns();
     for (int32_t i = 0; i < n_prompt; ) {
         if (g_state.cancel.load()) {
+            prefill_ns = now_ns() - t0;
             llama_sampler_free(smpl);
             return -100;
         }
@@ -333,18 +369,24 @@ Java_relay_ondevice_engine_JniLlamaEngine_nativeGenerate(
                 prompt_tokens.data() + i,
                 n_eval);
         if (llama_decode(ctx, batch) != 0) {
+            prefill_ns = now_ns() - t0;
             LOGE("nativeGenerate: prompt decode failed at %d (n_eval=%d)", i, n_eval);
             llama_sampler_free(smpl);
             return -6;
         }
         i += n_eval;
     }
+    const int64_t t_prefill_end = now_ns();
+    prefill_ns = t_prefill_end - t0;
 
     const int32_t max_gen = max_tokens > 0 ? max_tokens : 256;
     int32_t n_generated = 0;
 
     while (n_generated < max_gen) {
         if (g_state.cancel.load()) {
+            if (t_first != 0) {
+                decode_ns = now_ns() - t_first;
+            }
             llama_sampler_free(smpl);
             return -100;
         }
@@ -353,7 +395,17 @@ Java_relay_ondevice_engine_JniLlamaEngine_nativeGenerate(
         llama_sampler_accept(smpl, token);
 
         if (llama_vocab_is_eog(vocab, token)) {
+            if (t_first == 0) {
+                ttft_ns = now_ns() - t0;
+            } else {
+                decode_ns = now_ns() - t_first;
+            }
             break;
+        }
+
+        if (t_first == 0) {
+            t_first = now_ns();
+            ttft_ns = t_first - t0;
         }
 
         const std::string piece = token_to_piece(vocab, token);
@@ -362,11 +414,13 @@ Java_relay_ondevice_engine_JniLlamaEngine_nativeGenerate(
             const bool ok = emit_bytes(env, callback, on_token, piece);
             lock.lock();
             if (!ok) {
+                decode_ns = now_ns() - t_first;
                 g_state.cancel.store(true);
                 llama_sampler_free(smpl);
                 return -9;
             }
             if (g_state.model != model || g_state.ctx != ctx) {
+                decode_ns = now_ns() - t_first;
                 llama_sampler_free(smpl);
                 return -7;
             }
@@ -374,6 +428,7 @@ Java_relay_ondevice_engine_JniLlamaEngine_nativeGenerate(
 
         llama_batch batch = llama_batch_get_one(&token, 1);
         if (llama_decode(ctx, batch) != 0) {
+            decode_ns = now_ns() - t_first;
             LOGE("nativeGenerate: generation decode failed");
             llama_sampler_free(smpl);
             return -8;
@@ -381,8 +436,25 @@ Java_relay_ondevice_engine_JniLlamaEngine_nativeGenerate(
         ++n_generated;
     }
 
+    if (t_first != 0 && decode_ns == 0) {
+        decode_ns = now_ns() - t_first;
+    }
+
     llama_sampler_free(smpl);
-    LOGI("nativeGenerate: done prompt=%d completion=%d", n_prompt, n_generated);
+    const double prefill_s = prefill_ns / 1e9;
+    const double decode_s = decode_ns / 1e9;
+    const double prefill_tps = prefill_s > 0.0 ? static_cast<double>(n_prompt) / prefill_s : 0.0;
+    const int32_t decode_tokens = n_generated > 0 ? n_generated : 0;
+    const double decode_tps = decode_s > 0.0 ? static_cast<double>(decode_tokens) / decode_s : 0.0;
+    LOGI("nativeGenerate: done prompt=%d completion=%d prefill_ms=%lld ttft_ms=%lld decode_ms=%lld "
+         "prefill_tps=%.1f decode_tps=%.1f",
+         n_prompt,
+         n_generated,
+         static_cast<long long>(prefill_ns / 1000000),
+         static_cast<long long>(ttft_ns / 1000000),
+         static_cast<long long>(decode_ns / 1000000),
+         prefill_tps,
+         decode_tps);
     const int prompt_part = std::min(n_prompt, 0xFFFF);
     const int completion_part = std::min(n_generated, 0xFFFF);
     return (prompt_part << 16) | completion_part;
