@@ -27,4 +27,5 @@ rootProject.name = "relay"
 
 include(":relay-llm")
 include(":relay-ondevice")
+include(":relay-agent-core")
 include(":app")

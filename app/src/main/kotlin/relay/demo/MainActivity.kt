@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import relay.demo.agent.AgentTestScreen
 import relay.demo.home.ModuleHomeScreen
 import relay.demo.home.RelayModule
 import relay.demo.llm.LlmTestScreen
@@ -29,8 +30,8 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * One screen per Relay module. `relay-llm` and `relay-ondevice` are live; the rest stay
- * listed as disabled entries so the runtime shape remains visible as modules land.
+ * One screen per Relay module. `relay-ui-kit` stays listed as a disabled entry
+ * so the runtime shape remains visible as modules land.
  */
 @Composable
 private fun RelayDemoApp() {
@@ -39,6 +40,7 @@ private fun RelayDemoApp() {
     when (openModule) {
         RelayModule.Llm -> LlmTestScreen(onBack = { openModule = null })
         RelayModule.OnDevice -> OnDeviceTestScreen(onBack = { openModule = null })
+        RelayModule.AgentCore -> AgentTestScreen(onBack = { openModule = null })
         else -> ModuleHomeScreen(onOpenModule = { openModule = it })
     }
 }

@@ -40,7 +40,7 @@ enum class RelayModule(
     AgentCore(
         artifact = "relay-agent-core",
         summary = "Agent 运行时:agent loop、工具注册与调度、会话与上下文管理",
-        available = false,
+        available = true,
     ),
     UiKit(
         artifact = "relay-ui-kit",
