@@ -49,6 +49,66 @@ std::string jstring_to_utf8(JNIEnv * env, jstring value) {
     return out;
 }
 
+std::vector<std::string> jstring_array_to_utf8(JNIEnv * env, jobjectArray values) {
+    std::vector<std::string> out;
+    if (values == nullptr) {
+        return out;
+    }
+    const jsize n = env->GetArrayLength(values);
+    out.reserve(static_cast<size_t>(n));
+    for (jsize i = 0; i < n; ++i) {
+        auto item = static_cast<jstring>(env->GetObjectArrayElement(values, i));
+        out.push_back(jstring_to_utf8(env, item));
+        if (item != nullptr) {
+            env->DeleteLocalRef(item);
+        }
+    }
+    return out;
+}
+
+/**
+ * Reads tokenizer.chat_template from the loaded GGUF and runs llama.cpp's
+ * built-in (non-Jinja) matcher. Unknown templates fall back to ChatML, which
+ * is also what a null template argument selects.
+ */
+bool apply_chat_template_locked(
+        const std::vector<std::string> & roles,
+        const std::vector<std::string> & contents,
+        std::string & out) {
+    if (g_state.model == nullptr || roles.size() != contents.size() || roles.empty()) {
+        return false;
+    }
+    std::vector<llama_chat_message> chat;
+    chat.reserve(roles.size());
+    for (size_t i = 0; i < roles.size(); ++i) {
+        chat.push_back({roles[i].c_str(), contents[i].c_str()});
+    }
+
+    const char * tmpl = llama_model_chat_template(g_state.model, /* name */ nullptr);
+    int32_t n = llama_chat_apply_template(
+            tmpl, chat.data(), chat.size(), /* add_ass */ true, nullptr, 0);
+    if (n < 0) {
+        LOGI("nativeApplyChatTemplate: GGUF template not in built-in list, falling back to chatml");
+        tmpl = nullptr;
+        n = llama_chat_apply_template(
+                tmpl, chat.data(), chat.size(), true, nullptr, 0);
+    }
+    if (n < 0) {
+        LOGE("nativeApplyChatTemplate: llama_chat_apply_template failed");
+        return false;
+    }
+    out.assign(static_cast<size_t>(n), '\0');
+    n = llama_chat_apply_template(
+            tmpl, chat.data(), chat.size(), true, out.data(), n);
+    if (n < 0) {
+        LOGE("nativeApplyChatTemplate: second apply failed");
+        return false;
+    }
+    out.resize(static_cast<size_t>(n));
+    LOGI("nativeApplyChatTemplate: %d bytes tmpl=%s", n, tmpl ? "gguf" : "chatml");
+    return true;
+}
+
 void free_loaded_locked() {
     if (g_state.ctx != nullptr) {
         llama_detach_threadpool(g_state.ctx);
@@ -239,6 +299,36 @@ Java_relay_ondevice_engine_JniLlamaEngine_nativeCancel(
     g_state.cancel.store(true);
 }
 
+JNIEXPORT jbyteArray JNICALL
+Java_relay_ondevice_engine_JniLlamaEngine_nativeApplyChatTemplate(
+        JNIEnv * env,
+        jobject /* thiz */,
+        jobjectArray roles_j,
+        jobjectArray contents_j) {
+    const std::vector<std::string> roles = jstring_array_to_utf8(env, roles_j);
+    const std::vector<std::string> contents = jstring_array_to_utf8(env, contents_j);
+
+    std::string formatted;
+    {
+        std::lock_guard<std::mutex> lock(g_state.mu);
+        if (!apply_chat_template_locked(roles, contents, formatted)) {
+            return nullptr;
+        }
+    }
+
+    jbyteArray arr = env->NewByteArray(static_cast<jsize>(formatted.size()));
+    if (arr == nullptr) {
+        LOGE("nativeApplyChatTemplate: NewByteArray failed");
+        return nullptr;
+    }
+    env->SetByteArrayRegion(
+            arr,
+            0,
+            static_cast<jsize>(formatted.size()),
+            reinterpret_cast<const jbyte *>(formatted.data()));
+    return arr;
+}
+
 JNIEXPORT jint JNICALL
 Java_relay_ondevice_engine_JniLlamaEngine_nativeGenerate(
         JNIEnv * env,
@@ -379,7 +469,15 @@ Java_relay_ondevice_engine_JniLlamaEngine_nativeGenerate(
     const int64_t t_prefill_end = now_ns();
     prefill_ns = t_prefill_end - t0;
 
-    const int32_t max_gen = max_tokens > 0 ? max_tokens : 256;
+    // Each generated token occupies one more KV slot. Without this clamp a long
+    // max_tokens on a short remaining window dies mid-sentence in llama_decode.
+    const int32_t requested_gen = max_tokens > 0 ? max_tokens : 256;
+    const int32_t room = static_cast<int32_t>(n_ctx - static_cast<uint32_t>(n_prompt));
+    const int32_t max_gen = std::min(requested_gen, room);
+    if (max_gen < requested_gen) {
+        LOGI("nativeGenerate: clamp max_gen %d -> %d (n_ctx=%u n_prompt=%d)",
+             requested_gen, max_gen, n_ctx, n_prompt);
+    }
     int32_t n_generated = 0;
 
     while (n_generated < max_gen) {

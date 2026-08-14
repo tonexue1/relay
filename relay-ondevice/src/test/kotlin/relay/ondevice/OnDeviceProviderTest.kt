@@ -117,6 +117,59 @@ class OnDeviceProviderTest {
     }
 
     @Test
+    fun streamFormatsMessagesThroughTheEngineTemplate() = runTest {
+        val engine = FakeLlamaEngine(pieces = listOf("ok"))
+        engine.load("/tmp/fake.gguf")
+        OnDeviceProvider(engine).stream(
+            ChatRequest(
+                model = "qwen2.5-0.5b-instruct",
+                messages = listOf(Message.system("brief"), Message.user("hi")),
+            ),
+        ).toList()
+
+        assertEquals("formatted:2", engine.lastPrompt)
+    }
+
+    @Test
+    fun rejectsToolTurnsWhenFormatting() = runBlocking {
+        val engine = FakeLlamaEngine()
+        engine.load("/tmp/fake.gguf")
+        val provider = OnDeviceProvider(engine)
+        try {
+            provider.stream(
+                ChatRequest(
+                    model = "qwen2.5-0.5b-instruct",
+                    messages = listOf(
+                        Message.user("call a tool"),
+                        Message.toolResult("1", "{}"),
+                    ),
+                ),
+            ).toList()
+            fail("expected InvalidRequest")
+        } catch (e: RelayLlmException.InvalidRequest) {
+            assertTrue(e.message!!.contains("TOOL"))
+        }
+    }
+
+    @Test
+    fun rejectsEmptyMessagesWhenFormatting() = runBlocking {
+        val engine = FakeLlamaEngine()
+        engine.load("/tmp/fake.gguf")
+        val provider = OnDeviceProvider(engine)
+        try {
+            provider.stream(
+                ChatRequest(
+                    model = "qwen2.5-0.5b-instruct",
+                    messages = emptyList(),
+                ),
+            ).toList()
+            fail("expected InvalidRequest")
+        } catch (e: RelayLlmException.InvalidRequest) {
+            assertTrue(e.message!!.contains("empty"))
+        }
+    }
+
+    @Test
     fun requiresALoadedModel() = runBlocking {
         val provider = OnDeviceProvider(FakeLlamaEngine())
         try {
@@ -139,6 +192,8 @@ private class FakeLlamaEngine(
 ) : LlamaEngine {
     private var loaded = false
     private var cancelled = false
+    var lastPrompt: String? = null
+        private set
 
     override val isLoaded: Boolean get() = loaded
 
@@ -155,6 +210,14 @@ private class FakeLlamaEngine(
         cancelled = true
     }
 
+    override fun formatChat(messages: List<Message>): String {
+        require(messages.isNotEmpty()) { "messages must not be empty" }
+        check(messages.none { it.role == relay.llm.model.Role.TOOL }) {
+            "on-device chat template does not support TOOL turns"
+        }
+        return "formatted:${messages.size}"
+    }
+
     override fun generate(
         prompt: String,
         maxTokens: Int,
@@ -163,6 +226,7 @@ private class FakeLlamaEngine(
         onToken: (String) -> Unit,
     ): GenerateResult {
         check(loaded)
+        lastPrompt = prompt
         if (cancelled) return GenerateResult.Cancelled
         pieces.forEach(onToken)
         return if (cancelled) GenerateResult.Cancelled else result

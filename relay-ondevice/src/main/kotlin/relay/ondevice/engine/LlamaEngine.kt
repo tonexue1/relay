@@ -1,5 +1,6 @@
 package relay.ondevice.engine
 
+import relay.llm.model.Message
 import relay.ondevice.cpu.CpuPlan
 import relay.ondevice.cpu.CpuTopology
 
@@ -18,6 +19,12 @@ interface LlamaEngine {
     fun unload()
 
     fun cancel()
+
+    /**
+     * Formats [messages] with the GGUF-embedded chat template (via
+     * `llama_chat_apply_template`). Ends with the assistant generation prefix.
+     */
+    fun formatChat(messages: List<Message>): String
 
     fun generate(
         prompt: String,

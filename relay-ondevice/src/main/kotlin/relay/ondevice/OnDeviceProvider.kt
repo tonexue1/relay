@@ -27,7 +27,6 @@ import relay.ondevice.engine.GenerateTimings
 import relay.ondevice.engine.LlamaEngine
 import relay.ondevice.model.ModelSpec
 import relay.ondevice.model.OnDeviceModels
-import relay.ondevice.prompt.QwenChatTemplate
 
 /**
  * End-side [Provider] backed by a local llama.cpp engine.
@@ -80,7 +79,7 @@ class OnDeviceProvider(
         }
 
         val prompt = try {
-            QwenChatTemplate.format(request.messages)
+            engine.formatChat(request.messages)
         } catch (e: RuntimeException) {
             throw RelayLlmException.InvalidRequest(
                 message = e.message ?: "Invalid messages",

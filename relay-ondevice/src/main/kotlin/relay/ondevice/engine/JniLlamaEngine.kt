@@ -1,6 +1,8 @@
 package relay.ondevice.engine
 
 import android.util.Log
+import relay.llm.model.Message
+import relay.llm.model.Role
 import relay.ondevice.cpu.CpuPlan
 
 /**
@@ -34,6 +36,23 @@ class JniLlamaEngine : LlamaEngine {
 
     override fun cancel() {
         nativeCancel()
+    }
+
+    override fun formatChat(messages: List<Message>): String {
+        check(loaded) { "Model is not loaded" }
+        require(messages.isNotEmpty()) { "messages must not be empty" }
+        val roles = Array(messages.size) { i ->
+            when (messages[i].role) {
+                Role.SYSTEM -> "system"
+                Role.USER -> "user"
+                Role.ASSISTANT -> "assistant"
+                Role.TOOL -> error("on-device chat template does not support TOOL turns")
+            }
+        }
+        val contents = Array(messages.size) { messages[it].content.orEmpty() }
+        val bytes = nativeApplyChatTemplate(roles, contents)
+            ?: error("Failed to apply the GGUF chat template")
+        return String(bytes, Charsets.UTF_8)
     }
 
     override fun generate(
@@ -94,6 +113,7 @@ class JniLlamaEngine : LlamaEngine {
     ): Boolean
     private external fun nativeUnload()
     private external fun nativeCancel()
+    private external fun nativeApplyChatTemplate(roles: Array<String>, contents: Array<String>): ByteArray?
     private external fun nativeGenerate(
         prompt: String,
         maxTokens: Int,
