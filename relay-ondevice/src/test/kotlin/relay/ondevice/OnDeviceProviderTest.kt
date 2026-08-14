@@ -17,6 +17,7 @@ import relay.ondevice.cpu.CpuPlan
 import relay.ondevice.engine.GenerateResult
 import relay.ondevice.engine.GenerateTimings
 import relay.ondevice.engine.LlamaEngine
+import relay.ondevice.model.OnDeviceModels
 
 class OnDeviceProviderTest {
 
@@ -31,7 +32,7 @@ class OnDeviceProviderTest {
 
         val chunks = provider.stream(
             ChatRequest(
-                model = "qwen2.5-0.5b-instruct",
+                model = OnDeviceModels.default.id,
                 messages = listOf(Message.user("什么是端云协同")),
                 maxTokens = 32,
             ),
@@ -60,7 +61,7 @@ class OnDeviceProviderTest {
 
         val done = provider.stream(
             ChatRequest(
-                model = "qwen2.5-0.5b-instruct",
+                model = OnDeviceModels.default.id,
                 messages = listOf(Message.user("hi")),
             ),
         ).toList().filterIsInstance<ChatChunk.Done>().single()
@@ -81,7 +82,7 @@ class OnDeviceProviderTest {
 
         val response = provider.chat(
             ChatRequest(
-                model = "qwen2.5-0.5b-instruct",
+                model = OnDeviceModels.default.id,
                 messages = listOf(Message.user("ping")),
             ),
         )
@@ -99,7 +100,7 @@ class OnDeviceProviderTest {
         try {
             provider.stream(
                 ChatRequest(
-                    model = "qwen2.5-0.5b-instruct",
+                    model = OnDeviceModels.default.id,
                     messages = listOf(Message.user("use a tool")),
                     tools = listOf(
                         ToolDef(
@@ -122,7 +123,7 @@ class OnDeviceProviderTest {
         engine.load("/tmp/fake.gguf")
         OnDeviceProvider(engine).stream(
             ChatRequest(
-                model = "qwen2.5-0.5b-instruct",
+                model = OnDeviceModels.default.id,
                 messages = listOf(Message.system("brief"), Message.user("hi")),
             ),
         ).toList()
@@ -138,7 +139,7 @@ class OnDeviceProviderTest {
         try {
             provider.stream(
                 ChatRequest(
-                    model = "qwen2.5-0.5b-instruct",
+                    model = OnDeviceModels.default.id,
                     messages = listOf(
                         Message.user("call a tool"),
                         Message.toolResult("1", "{}"),
@@ -159,7 +160,7 @@ class OnDeviceProviderTest {
         try {
             provider.stream(
                 ChatRequest(
-                    model = "qwen2.5-0.5b-instruct",
+                    model = OnDeviceModels.default.id,
                     messages = emptyList(),
                 ),
             ).toList()
@@ -175,7 +176,7 @@ class OnDeviceProviderTest {
         try {
             provider.stream(
                 ChatRequest(
-                    model = "qwen2.5-0.5b-instruct",
+                    model = OnDeviceModels.default.id,
                     messages = listOf(Message.user("hi")),
                 ),
             ).toList()

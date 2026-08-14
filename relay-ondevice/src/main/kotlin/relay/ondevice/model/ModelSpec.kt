@@ -3,8 +3,8 @@ package relay.ondevice.model
 /**
  * Describes a downloadable on-device GGUF.
  *
- * [Qwen25_05B] is the first-slice model. [Qwen25_15B] is reserved as a slot only --
- * download / load for 1.5B is intentionally not wired yet.
+ * [Qwen25_3B] is the default. Smaller checkpoints stay listed so a device that
+ * already has them can still load them by id.
  */
 data class ModelSpec(
     val id: String,
@@ -41,5 +41,16 @@ object OnDeviceModels {
         maxOutputTokens = 2_048,
     )
 
-    val default: ModelSpec = Qwen25_05B
+    val Qwen25_3B = ModelSpec(
+        id = "qwen2.5-3b-instruct",
+        displayName = "Qwen2.5 3B Instruct (Q4_K_M)",
+        fileName = "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+        downloadUrl = "https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/resolve/main/Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+        sha256 = "9c9f56a391a3abbd5b89d0245bf6106081bcc3173119d4229235dd9d23253f94",
+        expectedBytes = 1_929_903_264L,
+        contextWindow = 32_768,
+        maxOutputTokens = 2_048,
+    )
+
+    val default: ModelSpec = Qwen25_3B
 }

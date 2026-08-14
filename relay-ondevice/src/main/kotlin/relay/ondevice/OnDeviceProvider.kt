@@ -31,8 +31,8 @@ import relay.ondevice.model.OnDeviceModels
 /**
  * End-side [Provider] backed by a local llama.cpp engine.
  *
- * Call [load] with a verified GGUF path before chat/stream. Tools are rejected -- the
- * 0.5B Instruct checkpoint does not advertise TOOLS.
+ * Call [load] with a verified GGUF path before chat/stream. Tools are rejected --
+ * the current Instruct checkpoints do not advertise TOOLS.
  *
  * Streaming: native generation runs on a dedicated thread and pushes text pieces into a
  * queue drained on [Dispatchers.IO]. Cancelling collection calls [LlamaEngine.cancel].

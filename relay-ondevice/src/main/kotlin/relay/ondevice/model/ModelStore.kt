@@ -1,9 +1,12 @@
 package relay.ondevice.model
 
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -12,7 +15,9 @@ import okhttp3.Request
 /**
  * Downloads and verifies GGUF files under [rootDir].
  *
- * First slice: whole-file overwrite (no resume). Progress is reported as bytes downloaded.
+ * Incomplete transfers are kept as `*.partial` and resumed with `Range` when the
+ * server answers 206. A 200 after a Range request means the server ignored it, so
+ * the file is rewritten from byte 0. Progress is absolute (already + new) / total.
  */
 class ModelStore(
     private val rootDir: File,
@@ -38,29 +43,12 @@ class ModelStore(
 
         val target = localFile(spec)
         val temp = File(rootDir, "${spec.fileName}.partial")
-        if (temp.exists()) temp.delete()
+        if (temp.exists() && spec.expectedBytes > 0 && temp.length() > spec.expectedBytes) {
+            temp.delete()
+        }
 
-        val request = Request.Builder().url(spec.downloadUrl).get().build()
-        httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IOException("Download failed HTTP ${response.code} for ${spec.id}")
-            }
-            val body = response.body
-            val total = body.contentLength().takeIf { it > 0 } ?: spec.expectedBytes
-            body.byteStream().use { input ->
-                temp.outputStream().use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var downloaded = 0L
-                    while (true) {
-                        ensureActive()
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        output.write(buffer, 0, read)
-                        downloaded += read
-                        onProgress(downloaded, total)
-                    }
-                }
-            }
+        if (!isCompletePartial(temp, spec)) {
+            download(spec, temp, onProgress)
         }
 
         val digest = sha256(temp)
@@ -81,6 +69,72 @@ class ModelStore(
             temp.delete()
         }
         target
+    }
+
+    private fun isCompletePartial(temp: File, spec: ModelSpec): Boolean {
+        if (!temp.isFile) return false
+        if (spec.expectedBytes > 0 && temp.length() != spec.expectedBytes) return false
+        if (spec.expectedBytes == 0L) return false
+        return sha256(temp).equals(spec.sha256, ignoreCase = true)
+    }
+
+    private suspend fun download(
+        spec: ModelSpec,
+        temp: File,
+        onProgress: (downloaded: Long, total: Long) -> Unit,
+    ) {
+        val offset = if (temp.isFile) temp.length() else 0L
+        val request = Request.Builder()
+            .url(spec.downloadUrl)
+            .get()
+            .apply { if (offset > 0) header("Range", "bytes=$offset-") }
+            .build()
+
+        httpClient.newCall(request).execute().use { response ->
+            when (response.code) {
+                200 -> {
+                    // Full body. If we asked for a range the server ignored it -- start over.
+                    writeBody(response.body.byteStream(), temp, append = false, already = 0L, spec, onProgress)
+                }
+                206 -> {
+                    writeBody(response.body.byteStream(), temp, append = true, already = offset, spec, onProgress)
+                }
+                416 -> {
+                    if (!isCompletePartial(temp, spec)) {
+                        temp.delete()
+                        throw IOException("Download failed HTTP 416 for ${spec.id}")
+                    }
+                }
+                else -> throw IOException("Download failed HTTP ${response.code} for ${spec.id}")
+            }
+        }
+    }
+
+    private suspend fun writeBody(
+        input: InputStream,
+        temp: File,
+        append: Boolean,
+        already: Long,
+        spec: ModelSpec,
+        onProgress: (downloaded: Long, total: Long) -> Unit,
+    ) {
+        val total = if (spec.expectedBytes > 0) spec.expectedBytes else already + 1
+        input.use { stream ->
+            FileOutputStream(temp, append).use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var downloaded = already
+                onProgress(downloaded, total.coerceAtLeast(downloaded))
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val read = stream.read(buffer)
+                    if (read < 0) break
+                    output.write(buffer, 0, read)
+                    downloaded += read
+                    val reportedTotal = if (spec.expectedBytes > 0) spec.expectedBytes else downloaded
+                    onProgress(downloaded, reportedTotal)
+                }
+            }
+        }
     }
 
     companion object {

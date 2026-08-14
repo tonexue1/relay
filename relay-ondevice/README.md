@@ -17,5 +17,5 @@ git submodule update --init --depth 1 third_party/llama.cpp
 ## Demo flow
 
 1. Open **relay-ondevice** in the demo app
-2. Download Qwen2.5-0.5B Q4_K_M (~380 MB) into app `filesDir/models`
+2. Download Qwen2.5-3B Q4_K_M (~1.8 GB) into app `filesDir/models`
 3. Load → Send (stream or unary)
