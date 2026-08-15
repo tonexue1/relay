@@ -17,6 +17,8 @@
 
 模块:`relay/orchestra`,Kotlin/JVM,`api(project(":relay:agent-core"))`。v1 不依赖 Android;`ArtifactStore` 先内存,files 实现留给 sample。
 
+**对外具名拓扑,对内 Call / Yield。** sample 和业务 import 的是 `Pipeline` / `Supervisor` / `Hierarchy` / `MapReduce` / `Swarm` / `GroupChat` / `Director`。`AgentTool`、`Stage`、`TurnPolicy` 留在包内(或 `internal`)。陈列课见 [sample-ideas.md](./sample-ideas.md)。
+
 ---
 
 ## 1. 共用件(两格都用,先做)

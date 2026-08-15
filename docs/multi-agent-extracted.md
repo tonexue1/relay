@@ -166,11 +166,11 @@ relay/llm Provider
 
 ## 5. 建议(替换「v1 做两种商品名」)
 
-1. Orchestra 的公开机制就是 **Call 和 Yield**。
-2. 调研 / 端云接力只开 Call。
-3. 角色同场只开 Yield;单角色连 Yield 都不要。
-4. 导演、Handoff、selector 都是 Yield 的 turn policy,不单独立项。
-5. Memory 按拓扑分:Call 用即弃 + ledger + ref;Yield 用 Scene 真源 + 每角色投影 + Pin。
+1. Orchestra **对外实现主流具名拓扑**;Call / Yield 是包内原语,不出现在 sample 菜单上。
+2. 调研 / 端云接力用 `Pipeline` / `Supervisor` / `MapReduce` / `Hierarchy`。
+3. 同场 / 转接 / 圆桌用 `Swarm` / `GroupChat` / `Director`;单角色连 orchestra 都不要。
+4. Handoff、selector、GM 是 Yield 上的策略,做成对应具名类型,不让业务自己拼 Stage。
+5. Memory 按内部格分:Call 用即弃 + ledger + ref;Yield 用 Scene 真源 + 每角色投影 + Pin。
 
 实现顺序仍可先 Call(和现有 `Tool` 同构)、后 Yield(要 Scene 事件和长活实例)。但菜单从此是两格,不是六格。
 
