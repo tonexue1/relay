@@ -25,7 +25,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "relay"
 
-include(":relay-llm")
-include(":relay-ondevice")
-include(":relay-agent-core")
-include(":app")
+include(":relay:llm")
+include(":relay:ondevice")
+include(":relay:agent-core")
+include(":samples:playground")

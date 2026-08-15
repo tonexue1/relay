@@ -46,7 +46,7 @@ fun OnDeviceTestScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("relay-ondevice", fontFamily = FontFamily.Monospace) },
+                title = { Text("relay/ondevice", fontFamily = FontFamily.Monospace) },
                 navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
             )
         },

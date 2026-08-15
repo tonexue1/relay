@@ -72,7 +72,7 @@ android {
 }
 
 dependencies {
-    api(project(":relay-llm"))
+    api(project(":relay:llm"))
 
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.okhttp)

@@ -50,7 +50,7 @@ fun LlmTestScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("relay-llm", fontFamily = FontFamily.Monospace) },
+                title = { Text("relay/llm", fontFamily = FontFamily.Monospace) },
                 navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
             )
         },

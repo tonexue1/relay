@@ -16,7 +16,7 @@ java {
 }
 
 dependencies {
-    api(project(":relay-llm"))
+    api(project(":relay:llm"))
     api(libs.kotlinx.coroutines.core)
 
     testImplementation(kotlin("test"))

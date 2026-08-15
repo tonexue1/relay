@@ -1,4 +1,4 @@
-# relay-ondevice
+# relay/ondevice
 
 End-side `Provider` backed by llama.cpp (arm64 CPU via JNI).
 
@@ -16,6 +16,6 @@ git submodule update --init --depth 1 third_party/llama.cpp
 
 ## Demo flow
 
-1. Open **relay-ondevice** in the demo app
+1. Open **relay/ondevice** in the playground sample
 2. Download Qwen2.5-3B Q4_K_M (~1.8 GB) into app `filesDir/models`
 3. Load → Send (stream or unary)

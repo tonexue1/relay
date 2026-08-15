@@ -49,7 +49,7 @@ fun AgentTestScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("relay-agent-core", fontFamily = FontFamily.Monospace) },
+                title = { Text("relay/agent-core", fontFamily = FontFamily.Monospace) },
                 navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
             )
         },

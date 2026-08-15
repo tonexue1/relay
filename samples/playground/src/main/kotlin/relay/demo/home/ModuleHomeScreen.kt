@@ -28,22 +28,22 @@ enum class RelayModule(
     val available: Boolean,
 ) {
     Llm(
-        artifact = "relay-llm",
+        artifact = "relay/llm",
         summary = "统一模型调用:Provider 抽象、拦截器链、流式与 tool calling、token 预估",
         available = true,
     ),
     OnDevice(
-        artifact = "relay-ondevice",
+        artifact = "relay/ondevice",
         summary = "端侧推理 Provider:llama.cpp via JNI,与云端 Provider 同一接口",
         available = true,
     ),
     AgentCore(
-        artifact = "relay-agent-core",
+        artifact = "relay/agent-core",
         summary = "Agent 运行时:agent loop、工具注册与调度、会话与上下文管理",
         available = true,
     ),
     UiKit(
-        artifact = "relay-ui-kit",
+        artifact = "relay/ui-kit",
         summary = "Compose 对话组件:消息流、流式打字、工具调用卡片",
         available = false,
     ),

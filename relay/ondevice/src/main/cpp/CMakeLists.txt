@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project(relay_llama)
 
-set(LLAMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/llama.cpp")
+set(LLAMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../third_party/llama.cpp")
 
 # Always optimize the native stack -- AGP debug would otherwise build llama.cpp -O0
 # and make a 0.5B model feel slower than a tuned 3B build.
