@@ -42,6 +42,11 @@ enum class RelayModule(
         summary = "Agent 运行时:agent loop、工具注册与调度、会话与上下文管理",
         available = true,
     ),
+    Orchestra(
+        artifact = "relay/orchestra",
+        summary = "多 Agent 编排:先体验 GroupChat 圆桌（Yield，没有综合者）",
+        available = true,
+    ),
     UiKit(
         artifact = "relay/ui-kit",
         summary = "Compose 对话组件:消息流、流式打字、工具调用卡片",

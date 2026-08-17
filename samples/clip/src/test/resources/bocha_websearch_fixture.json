@@ -1,0 +1,22 @@
+{
+  "code": 200,
+  "data": {
+    "_type": "SearchResponse",
+    "queryContext": { "originalQuery": "华为 Mate 70" },
+    "webPages": {
+      "value": [
+        {
+          "name": "HUAWEI Mate 70_百度百科",
+          "url": "https://baike.baidu.com/item/HUAWEI%20Mate%2070/64325200",
+          "snippet": "短摘要",
+          "summary": "2024年11月26日，华为正式推出了全新旗舰HUAWEI Mate 70系列。"
+        },
+        {
+          "name": "Mate 70 参数",
+          "url": "https://detail.zol.com.cn/series/57/10843294_1.html",
+          "snippet": "中关村在线产品库"
+        }
+      ]
+    }
+  }
+}

@@ -28,4 +28,7 @@ rootProject.name = "relay"
 include(":relay:llm")
 include(":relay:ondevice")
 include(":relay:agent-core")
+include(":relay:orchestra")
 include(":samples:playground")
+include(":samples:clip")
+include(":samples:werewolf")

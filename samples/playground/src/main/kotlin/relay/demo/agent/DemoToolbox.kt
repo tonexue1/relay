@@ -1,7 +1,5 @@
 package relay.demo.agent
 
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -14,14 +12,11 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import relay.agent.FunTool
 import relay.agent.Tool
 
@@ -125,80 +120,22 @@ class DemoToolbox(
             description = "Search the public internet. Returns titles, snippets and URLs. Use fetch_url to read a promising result.",
             parameters = stringSchema("query" to "Search query"),
         ) { args ->
-            withContext(Dispatchers.IO) { webSearch(args.str("query")) }
+            withContext(Dispatchers.IO) { search.search(args.str("query")) }
         },
         FunTool(
             name = "fetch_url",
             description = "HTTP GET a public http(s) page and return extracted text (truncated).",
             parameters = stringSchema("url" to "Full http or https URL"),
         ) { args ->
-            withContext(Dispatchers.IO) { fetchUrl(args.str("url")) }
+            withContext(Dispatchers.IO) { search.fetchUrl(args.str("url")) }
         },
     )
+
+    private val search = WebSearch(http)
 
     companion object {
         private val SHANGHAI: ZoneId = ZoneId.of("Asia/Shanghai")
         private val ISO: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
-        private const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-    }
-
-    private fun webSearch(query: String): String {
-        val bing = runCatching { searchBing(query) }.getOrDefault(emptyList())
-        if (bing.isNotEmpty()) return bing.joinToString("\n\n")
-        val wiki = runCatching { searchWikipedia(query) }.getOrDefault(emptyList())
-        if (wiki.isNotEmpty()) return wiki.joinToString("\n\n")
-        error("no search results for '$query'")
-    }
-
-    private fun searchBing(query: String): List<String> {
-        val url = "https://www.bing.com/search?q=${query.encode()}&setlang=zh-Hans"
-        val html = httpGet(url)
-        val blocks = BING_BLOCK.findAll(html).take(5).toList()
-        return blocks.mapIndexedNotNull { index, match ->
-            val block = match.value
-            val link = BING_LINK.find(block) ?: return@mapIndexedNotNull null
-            val href = link.groupValues[1]
-            val title = stripHtml(link.groupValues[2]).ifBlank { return@mapIndexedNotNull null }
-            val snippet = BING_SNIPPET.find(block)?.groupValues?.get(1)?.let(::stripHtml).orEmpty()
-            "${index + 1}. $title\nurl: $href\n$snippet".trim()
-        }
-    }
-
-    private fun searchWikipedia(query: String): List<String> {
-        val url =
-            "https://zh.wikipedia.org/w/api.php?action=opensearch&search=${query.encode()}&limit=5&namespace=0&format=json"
-        val root = Json.parseToJsonElement(httpGet(url)).jsonArray
-        val titles = root.getOrNull(1)?.jsonArray ?: return emptyList()
-        val descs = root.getOrNull(2)?.jsonArray
-        val urls = root.getOrNull(3)?.jsonArray
-        return titles.mapIndexed { index, titleEl ->
-            val title = titleEl.jsonPrimitive.content
-            val desc = descs?.getOrNull(index)?.jsonPrimitive?.contentOrNull.orEmpty()
-            val href = urls?.getOrNull(index)?.jsonPrimitive?.contentOrNull.orEmpty()
-            "${index + 1}. $title\nurl: $href\n$desc".trim()
-        }
-    }
-
-    private fun fetchUrl(url: String): String {
-        val parsed = url.toHttpUrlOrNull() ?: error("invalid url '$url'")
-        require(parsed.isHttps || parsed.scheme == "http") { "only http(s) URLs are allowed" }
-        val body = httpGet(parsed.toString())
-        val text = stripHtml(body)
-        require(text.isNotBlank()) { "empty page at $url" }
-        return text.take(4_000)
-    }
-
-    private fun httpGet(url: String): String {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", USER_AGENT)
-            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-            .build()
-        http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("HTTP ${response.code} for $url")
-            return response.body.string()
-        }
     }
 }
 
@@ -212,29 +149,6 @@ internal val SAMPLE_TASKS: List<Pair<String, String>> = listOf(
     "多步计算" to
         "用 calculator 分别算 (3+5)*12 和 144/12，比较哪个更大，把较大的那个用 echo 打出来，再存笔记 winner。",
 )
-
-private val BING_BLOCK = Regex("""<li class="b_algo"[\s\S]*?</li>""", RegexOption.IGNORE_CASE)
-private val BING_LINK = Regex(
-    """<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a>""",
-    RegexOption.IGNORE_CASE,
-)
-private val BING_SNIPPET = Regex("""<p[^>]*>([\s\S]*?)</p>""", RegexOption.IGNORE_CASE)
-
-private fun String.encode(): String = URLEncoder.encode(this, StandardCharsets.UTF_8.name())
-
-private fun stripHtml(html: String): String =
-    html
-        .replace(Regex("(?is)<script[^>]*>.*?</script>"), " ")
-        .replace(Regex("(?is)<style[^>]*>.*?</style>"), " ")
-        .replace(Regex("(?is)<[^>]+>"), " ")
-        .replace(Regex("&nbsp;|&#160;"), " ")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace(Regex("\\s+"), " ")
-        .trim()
 
 private fun stringSchema(field: Pair<String, String>): JsonObject =
     objectSchema(field.first to ("string" to field.second), required = listOf(field.first))

@@ -1,15 +1,10 @@
 import java.util.Properties
 
 plugins {
-    // AGP 9 ships Kotlin support built in; applying kotlin-android on top is an error.
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
 
-/**
- * Convenience for local runs only: put `relay.deepseek.apiKey=sk-...` in the gitignored
- * `local.properties` to prefill the key field. Absent that, the key is typed in the app.
- */
 val devApiKey: String = providers
     .fileContents(rootProject.layout.projectDirectory.file("local.properties"))
     .asText
@@ -17,12 +12,11 @@ val devApiKey: String = providers
     .getOrElse("")
 
 android {
-    namespace = "relay.demo"
-    // AndroidX releases from 2026 refuse to be consumed below this.
+    namespace = "relay.werewolf"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "relay.demo"
+        applicationId = "relay.demo.werewolf"
         minSdk = 28
         targetSdk = 36
         versionCode = 1
@@ -46,11 +40,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
     implementation(project(":relay:llm"))
-    implementation(project(":relay:ondevice"))
     implementation(project(":relay:agent-core"))
     implementation(project(":relay:orchestra"))
 
@@ -67,4 +64,11 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+}
+
+tasks.withType<Test>().configureEach {
+    testLogging {
+        events("passed", "skipped", "failed")
+    }
 }

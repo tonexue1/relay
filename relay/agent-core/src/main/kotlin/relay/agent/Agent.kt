@@ -27,7 +27,9 @@ import relay.llm.tool.ToolCallAccumulator
  *
  * Working memory is [state.messages]. Each [prompt] / [continueRun] emits the pi-style
  * lifecycle and dispatches tools until the model stops or [AgentConfig.maxTurns] is hit.
- * The agent is not itself a [Provider] -- wrapping it as one would nest loops.
+ * A tool call past that budget is not executed: it receives [TOOL_BUDGET_EXHAUSTED] and
+ * the next LLM call is forced to write (no tools). The agent is not itself a [Provider]
+ * -- wrapping it as one would nest loops.
  */
 class Agent(
     private val provider: Provider,
@@ -123,7 +125,8 @@ class Agent(
         try {
             emit(AgentEvent.AgentStart)
             var emittedOpeningUser = false
-            repeat(maxTurns) { turnIndex ->
+            var toolBatches = 0
+            while (true) {
                 currentCoroutineContext().ensureActive()
                 emit(AgentEvent.TurnStart)
 
@@ -133,25 +136,19 @@ class Agent(
                     emittedOpeningUser = true
                 }
 
-                val request = ChatRequest(
-                    model = state.model,
-                    messages = withSystem(transformContext(state.messages)),
-                    tools = state.tools.map { it.def },
-                    temperature = temperature,
-                    maxTokens = maxTokens,
-                    timeoutMillis = timeoutMillis,
-                )
-
-                val assistantStart = Message(role = Role.ASSISTANT)
-                emit(AgentEvent.MessageStart(assistantStart))
-                val folded = collectAssistant(request)
-                append(folded.message)
-                emit(AgentEvent.MessageEnd(folded.message))
-
-                val wantsTools = folded.finishReason == FinishReason.TOOL_CALLS &&
-                    folded.message.toolCalls.isNotEmpty()
-                if (!wantsTools) {
+                val folded = collectAndCommitAssistant(withTools = true)
+                if (folded.message.toolCalls.isEmpty()) {
                     emit(AgentEvent.TurnEnd(folded.message, emptyList()))
+                    emit(AgentEvent.AgentEnd(state.messages))
+                    return
+                }
+
+                if (toolBatches >= maxTurns) {
+                    val refused = refuseToolBatch(folded.message.toolCalls)
+                    emit(AgentEvent.TurnEnd(folded.message, refused))
+                    emit(AgentEvent.TurnStart)
+                    val summary = collectAndCommitAssistant(withTools = false)
+                    emit(AgentEvent.TurnEnd(summary.message, emptyList()))
                     emit(AgentEvent.AgentEnd(state.messages))
                     return
                 }
@@ -163,14 +160,49 @@ class Agent(
                     emit(AgentEvent.MessageEnd(result))
                 }
                 emit(AgentEvent.TurnEnd(folded.message, toolResults))
-
-                if (turnIndex == maxTurns - 1) {
-                    throw AgentException.MaxTurnsExceeded(maxTurns)
-                }
+                toolBatches++
             }
-            throw AgentException.MaxTurnsExceeded(maxTurns)
         } finally {
             state.isRunning = false
+        }
+    }
+
+    private suspend fun kotlinx.coroutines.flow.FlowCollector<AgentEvent>.collectAndCommitAssistant(
+        withTools: Boolean,
+    ): FoldedAssistant {
+        val request = ChatRequest(
+            model = state.model,
+            messages = withSystem(transformContext(state.messages)),
+            tools = if (withTools) state.tools.map { it.def } else emptyList(),
+            temperature = temperature,
+            maxTokens = maxTokens,
+            timeoutMillis = timeoutMillis,
+        )
+        val assistantStart = Message(role = Role.ASSISTANT)
+        emit(AgentEvent.MessageStart(assistantStart))
+        val folded = collectAssistant(request)
+        val message = if (!withTools && folded.message.toolCalls.isNotEmpty()) {
+            folded.message.copy(toolCalls = emptyList())
+        } else {
+            folded.message
+        }
+        append(message)
+        emit(AgentEvent.MessageEnd(message))
+        return folded.copy(message = message)
+    }
+
+    private suspend fun kotlinx.coroutines.flow.FlowCollector<AgentEvent>.refuseToolBatch(
+        calls: List<ToolCall>,
+    ): List<Message> {
+        val result = TOOL_BUDGET_EXHAUSTED.format(maxTurns)
+        return calls.map { call ->
+            emit(AgentEvent.ToolExecutionStart(call))
+            emit(AgentEvent.ToolExecutionEnd(call, result, isError = false))
+            val message = Message.toolResult(toolCallId = call.id, content = result)
+            append(message)
+            emit(AgentEvent.MessageStart(message))
+            emit(AgentEvent.MessageEnd(message))
+            message
         }
     }
 
@@ -295,3 +327,6 @@ class Agent(
 
     private data class PendingCall(val index: Int, val call: ToolCall, val tool: Tool)
 }
+
+internal const val TOOL_BUDGET_EXHAUSTED =
+    "Tool budget exhausted (maxTurns=%d). This tool was not executed. Summarize your findings now. Do not call more tools."

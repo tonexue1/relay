@@ -14,6 +14,7 @@ import relay.demo.home.ModuleHomeScreen
 import relay.demo.home.RelayModule
 import relay.demo.llm.LlmTestScreen
 import relay.demo.ondevice.OnDeviceTestScreen
+import relay.demo.orchestra.GroupChatScreen
 import relay.demo.theme.RelayDemoTheme
 
 class MainActivity : ComponentActivity() {
@@ -41,6 +42,7 @@ private fun RelayDemoApp() {
         RelayModule.Llm -> LlmTestScreen(onBack = { openModule = null })
         RelayModule.OnDevice -> OnDeviceTestScreen(onBack = { openModule = null })
         RelayModule.AgentCore -> AgentTestScreen(onBack = { openModule = null })
+        RelayModule.Orchestra -> GroupChatScreen(onBack = { openModule = null })
         else -> ModuleHomeScreen(onOpenModule = { openModule = it })
     }
 }

@@ -235,23 +235,33 @@ class AgentTest {
     }
 
     @Test
-    fun maxTurnsThrowsAfterTheLastToolBatch() = runTest {
+    fun toolCallPastMaxTurnsReceivesSummarizeResult() = runTest {
+        var echoCount = 0
         val provider = ScriptedProvider(
             listOf(
                 { ScriptedProvider.tools(ToolCall("1", "echo", "{}")) },
                 { ScriptedProvider.tools(ToolCall("2", "echo", "{}")) },
+                { ScriptedProvider.text("final") },
             ),
         )
         val agent = Agent(
             provider = provider,
-            config = AgentConfig(model = "fake-model", maxTurns = 2),
-            tools = listOf(FunTool("echo") { "ok" }),
+            config = AgentConfig(model = "fake-model", maxTurns = 1),
+            tools = listOf(FunTool("echo") { echoCount++; "ok" }),
             transformContext = { it },
         )
 
-        assertFailsWith<AgentException.MaxTurnsExceeded> { agent.prompt("loop").toList() }
-        assertEquals(2, provider.receivedRequests.size)
-        assertEquals(2, agent.state.messages.count { it.role == Role.TOOL })
+        agent.prompt("loop").toList()
+
+        assertEquals(1, echoCount)
+        assertEquals("final", agent.state.messages.last().content)
+        assertTrue(provider.receivedRequests[0].tools.isNotEmpty())
+        assertTrue(provider.receivedRequests[1].tools.isNotEmpty())
+        assertTrue(provider.receivedRequests[2].tools.isEmpty())
+        val refused = agent.state.messages.filter { it.role == Role.TOOL }
+        assertEquals(2, refused.size)
+        assertEquals("ok", refused[0].content)
+        assertTrue(refused[1].content!!.contains("Summarize"))
         assertFalse(agent.state.isRunning)
     }
 
@@ -272,7 +282,7 @@ class AgentTest {
             provider = provider,
             config = AgentConfig(
                 model = "fake-model",
-                maxTurns = 1,
+                maxTurns = 2,
                 toolExecution = ToolExecutionMode.Sequential,
             ),
             tools = listOf(
