@@ -19,3 +19,9 @@ interview/
 *.gguf
 *.gguf.partial
 
+# Dream eval harness
+eval/dream/.venv/
+eval/dream/out/
+__pycache__/
+*.pyc
+

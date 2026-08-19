@@ -47,6 +47,11 @@ enum class RelayModule(
         summary = "多 Agent 编排:先体验 GroupChat 圆桌（Yield，没有综合者）",
         available = true,
     ),
+    Memory(
+        artifact = "relay/memory-api",
+        summary = "个人助手记忆:原文 capture、云端抽三元组、本机图谱召回",
+        available = true,
+    ),
     UiKit(
         artifact = "relay/ui-kit",
         summary = "Compose 对话组件:消息流、流式打字、工具调用卡片",

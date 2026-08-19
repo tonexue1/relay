@@ -1,0 +1,112 @@
+[
+  {
+    "id": "in-01-peanut",
+    "kind": "memory",
+    "facts": [{"s": "用户", "p": "allergic_to", "o": "花生"}],
+    "question": "今晚火锅，花生酱蘸料我能点吗？",
+    "accept": ["不能", "不可以", "别", "过敏", "不要"],
+    "reject": ["可以点", "能点", "没问题"]
+  },
+  {
+    "id": "in-02-penicillin",
+    "kind": "memory",
+    "facts": [{"s": "用户", "p": "allergic_to", "o": "青霉素"}],
+    "question": "感冒了，医生开青霉素，我能打吗？",
+    "accept": ["不能", "不可以", "过敏", "别", "不要"],
+    "reject": ["可以打", "能打"]
+  },
+  {
+    "id": "in-03-city",
+    "kind": "memory",
+    "facts": [{"s": "用户", "p": "lives_in", "o": "杭州"}],
+    "question": "我住哪个城市？",
+    "accept": ["杭州"]
+  },
+  {
+    "id": "in-04-company",
+    "kind": "memory",
+    "facts": [{"s": "用户", "p": "works_at", "o": "阿里"}],
+    "question": "我在哪家公司上班？",
+    "accept": ["阿里"]
+  },
+  {
+    "id": "in-05-role",
+    "kind": "memory",
+    "facts": [{"s": "用户", "p": "works_as", "o": "客户端"}],
+    "question": "我做什么岗位的？",
+    "accept": ["客户端"]
+  },
+  {
+    "id": "in-06-coffee",
+    "kind": "memory",
+    "facts": [{"s": "用户", "p": "likes", "o": "美式"}],
+    "question": "给我点杯咖啡，按我平时喝的。点什么？",
+    "accept": ["美式"]
+  },
+  {
+    "id": "in-07-cilantro",
+    "kind": "memory",
+    "facts": [{"s": "用户", "p": "dislikes", "o": "香菜"}],
+    "question": "沙县小吃要不要加香菜？",
+    "accept": ["不要", "别加", "不放", "不加"],
+    "reject": ["加点", "可以加"]
+  },
+  {
+    "id": "in-08-cat",
+    "kind": "memory",
+    "facts": [
+      {"s": "用户", "p": "has_pet", "o": "猫"},
+      {"s": "猫", "p": "named", "o": "芝麻"}
+    ],
+    "question": "家里那只猫叫什么？",
+    "accept": ["芝麻"]
+  },
+  {
+    "id": "in-09-colleague",
+    "kind": "memory",
+    "facts": [{"s": "用户", "p": "colleague_of", "o": "王磊"}],
+    "question": "JNI 的事该拉哪个同事？",
+    "accept": ["王磊"]
+  },
+  {
+    "id": "in-10-mom",
+    "kind": "memory",
+    "facts": [
+      {"s": "用户", "p": "family_of", "o": "妈妈"},
+      {"s": "妈妈", "p": "lives_in", "o": "宁波"}
+    ],
+    "question": "我妈住哪？",
+    "accept": ["宁波"]
+  },
+  {
+    "id": "in-11-trip",
+    "kind": "memory",
+    "facts": [
+      {"s": "用户", "p": "plans", "o": "上海"},
+      {"s": "上海", "p": "located_in", "o": "静安"}
+    ],
+    "question": "我下周出差去哪、住哪一片？",
+    "accept": ["上海"]
+  },
+  {
+    "id": "in-12-metro",
+    "kind": "memory",
+    "facts": [{"s": "用户", "p": "prefers", "o": "地铁"}],
+    "question": "去滨江，按我习惯该怎么去？",
+    "accept": ["地铁"]
+  },
+  {
+    "id": "in-13-control-math",
+    "kind": "control",
+    "facts": [{"s": "用户", "p": "lives_in", "o": "杭州"}],
+    "question": "2 加 3 等于多少？",
+    "accept": ["5", "五"]
+  },
+  {
+    "id": "in-14-control-geo",
+    "kind": "control",
+    "facts": [{"s": "用户", "p": "allergic_to", "o": "花生"}],
+    "question": "杭州在哪个省？",
+    "accept": ["浙江"]
+  }
+]

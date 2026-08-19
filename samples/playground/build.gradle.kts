@@ -53,6 +53,7 @@ dependencies {
     implementation(project(":relay:ondevice"))
     implementation(project(":relay:agent-core"))
     implementation(project(":relay:orchestra"))
+    implementation(project(":relay:memory-api"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
