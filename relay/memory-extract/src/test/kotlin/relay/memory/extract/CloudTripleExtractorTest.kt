@@ -1,4 +1,4 @@
-package relay.memory
+package relay.memory.extract
 
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -6,6 +6,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Test
+import relay.memory.Fact
+import relay.memory.GRAPH_ASSISTANT
+import relay.memory.RawEvent
 
 class CloudTripleExtractorTest {
 
@@ -55,13 +58,13 @@ class CloudTripleExtractorTest {
     }
 
     @Test
-    fun extractCleansAliasesAndAttachesRawEventIds() = runTest {
+    fun extractAttachesRawEventIds() = runTest {
         val provider = RecordingProvider(
             """{"triples":[{"s":"用户","p":"allergic_to","o":"花生酱"}]}""",
         )
         val extractor = CloudTripleExtractor(provider, model = "fake-model")
         val drafts = extractor.extract(GRAPH_ASSISTANT, "用户: 我花生过敏，别推荐花生酱。", listOf("evt-1"))
-        assertEquals("花生", drafts.single().o)
+        assertEquals("花生酱", drafts.single().o)
         assertEquals(listOf("evt-1"), drafts.single().rawEventIds)
         val request = provider.chats.single()
         assertEquals("json_object", request.extra.getValue("response_format").jsonObject["type"]?.jsonPrimitive?.content)
@@ -93,18 +96,17 @@ class CloudTripleExtractorTest {
         )
         val drafts = CloudTripleExtractor(provider, model = "fake-model")
             .extract(GRAPH_ASSISTANT, "用户: 我妈爱吃花生。", listOf("e"))
-        assertTrue(drafts.any { it.s == "妈妈" && it.p == "likes" && it.o == "花生" })
-        assertTrue(drafts.any { it.s == "用户" && it.p == "child_of" && it.o == "妈妈" })
+        assertEquals(listOf(Triple("妈妈", "likes", "花生")), drafts.map { Triple(it.s, it.p, it.o) })
     }
 
     @Test
-    fun extractDropsHallucinationNotInDialogue() = runTest {
+    fun extractPassesThroughModelOutputEvenIfNotInDialogue() = runTest {
         val provider = RecordingProvider(
             """{"triples":[{"s":"用户","p":"allergic_to","o":"青霉素"}]}""",
         )
         val drafts = CloudTripleExtractor(provider, model = "fake-model")
             .extract(GRAPH_ASSISTANT, "用户: 今天雨好大，随便聊聊。", listOf("e"))
-        assertTrue(drafts.isEmpty())
+        assertEquals("青霉素", drafts.single().o)
     }
 
     @Test
@@ -114,6 +116,31 @@ class CloudTripleExtractorTest {
         )
         val drafts = CloudTripleExtractor(provider, model = "fake-model")
             .extract(GRAPH_ASSISTANT, "用户: 我工作两年了。", listOf("e"))
-        assertEquals("两年", drafts.single { it.p == "work_years" }.o)
+        assertEquals("两年了", drafts.single { it.p == "work_years" }.o)
+    }
+
+    @Test
+    fun parseRetractFlag() {
+        val parsed = parseTriplesJson(
+            """{"triples":[{"s":"用户","p":"plans","o":"美国","retract":true}]}""",
+        )
+        assertTrue(parsed.single().retract)
+        assertEquals("美国", parsed.single().o)
+    }
+
+    @Test
+    fun extractKeepsRetractFlagFromModel() = runTest {
+        val provider = RecordingProvider(
+            """{"triples":[{"s":"用户","p":"plans","o":"美国","retract":true}]}""",
+        )
+        val drafts = CloudTripleExtractor(provider, model = "fake-model").extract(
+            GRAPH_ASSISTANT,
+            "用户: 我不打算去了，签证没过。",
+            listOf("e"),
+            priorFacts = listOf(Fact("用户", "plans", "美国")),
+        )
+        assertTrue(drafts.single().retract)
+        assertEquals("美国", drafts.single().o)
+        assertTrue(provider.chats.single().messages.last().content.orEmpty().contains("已有事实"))
     }
 }

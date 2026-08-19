@@ -17,6 +17,7 @@ internal data class NovelChapter(
     }
 }
 
+/** Hand-authored gold for 林晚十回. Test fixture, not engine code. */
 internal object LinwanNovel {
     val CHAPTERS: List<NovelChapter> = listOf(
         NovelChapter(

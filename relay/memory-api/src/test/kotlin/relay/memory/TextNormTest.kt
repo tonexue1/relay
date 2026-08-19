@@ -16,14 +16,8 @@ class TextNormTest {
     }
 
     @Test
-    fun aliasesLongestMatchFirst() {
-        assertEquals("花生", normalizeText("花生酱"))
-        assertEquals("跳槽", normalizeText("离职"))
-        assertEquals("美式", normalizeText("美式咖啡"))
-    }
-
-    @Test
     fun compactWhitespaceAndNfkc() {
+        assertEquals("花生酱", normalizeText("花生酱"))
         assertEquals("杭州", normalizeText("  杭 州  "))
     }
 

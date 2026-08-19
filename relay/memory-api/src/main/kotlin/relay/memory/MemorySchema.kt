@@ -23,7 +23,10 @@ val MEMORY_SCHEMA: List<String> = listOf(
       p TEXT NOT NULL,
       o TEXT NOT NULL,
       confidence REAL NOT NULL,
-      raw_event_ids TEXT NOT NULL
+      raw_event_ids TEXT NOT NULL,
+      retract INTEGER NOT NULL,
+      valid_at INTEGER NOT NULL,
+      invalid_at INTEGER
     )
     """.trimIndent(),
     """
@@ -51,8 +54,10 @@ val MEMORY_SCHEMA: List<String> = listOf(
       dst TEXT NOT NULL,
       relation TEXT NOT NULL,
       confidence REAL NOT NULL,
-      valid_from INTEGER NOT NULL,
-      valid_to INTEGER,
+      created_at INTEGER NOT NULL,
+      expired_at INTEGER,
+      valid_at INTEGER NOT NULL,
+      invalid_at INTEGER,
       updated_at INTEGER NOT NULL,
       scope TEXT NOT NULL,
       provenance TEXT NOT NULL
@@ -79,7 +84,7 @@ val MEMORY_SCHEMA: List<String> = listOf(
     """.trimIndent(),
 )
 
-const val MEMORY_SCHEMA_VERSION: Int = 2
+const val MEMORY_SCHEMA_VERSION: Int = 4
 
 val MEMORY_DROP: List<String> = listOf(
     "DROP TABLE IF EXISTS pending_review",

@@ -1,4 +1,4 @@
-package relay.memory
+package relay.memory.extract
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -12,7 +12,6 @@ import relay.llm.model.ModelInfo
 import relay.llm.model.ProviderInfo
 import relay.llm.model.Usage
 
-/** Records chat/stream requests for hook tests. */
 internal class RecordingProvider(
     private val reply: String,
 ) : Provider {

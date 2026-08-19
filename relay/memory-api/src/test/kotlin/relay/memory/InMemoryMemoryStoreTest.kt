@@ -10,30 +10,37 @@ import org.junit.jupiter.api.Test
 class InMemoryMemoryStoreTest {
 
     @Test
-    fun remembersMomLikesPeanutsAndRecallsFrom我妈() = runTest {
+    fun remembersMomLikesPeanuts() = runTest {
         val store = InMemoryMemoryStore()
-        store.ingest(listOf(TripleDraft(GRAPH_ASSISTANT, "妈妈", "likes", "花生")))
-        val hit = store.query(GRAPH_ASSISTANT, "我妈爱吃什么")
+        store.ingest(
+            listOf(
+                TripleDraft(GRAPH_ASSISTANT, "妈妈", "likes", "花生"),
+                TripleDraft(GRAPH_ASSISTANT, "用户", "child_of", "妈妈"),
+            ),
+        )
+        val hit = store.query(GRAPH_ASSISTANT, "花生")
         assertTrue(hit.facts.any { it.s == "妈妈" && it.p == "likes" && it.o == "花生" })
-        assertTrue(hit.facts.any { it.p == "child_of" && it.o == "妈妈" })
+        val mom = store.query(GRAPH_ASSISTANT, "妈妈")
+        assertTrue(mom.facts.any { it.p == "child_of" && it.o == "妈妈" })
     }
 
     @Test
-    fun ingestThenQueryByObjectAndPredicate() = runTest {
+    fun ingestThenQueryByObjectAndPredicateLabel() = runTest {
         val store = InMemoryMemoryStore()
-        store.ingest(listOf(TripleDraft(GRAPH_ASSISTANT, "用户", "allergic_to", "花生酱")))
-        val byName = store.query(GRAPH_ASSISTANT, "火锅别放花生")
+        store.ingest(listOf(TripleDraft(GRAPH_ASSISTANT, "用户", "allergic_to", "花生")))
+        val byName = store.query(GRAPH_ASSISTANT, "花生")
         assertTrue(byName.facts.any { it.p == "allergic_to" && it.o == "花生" })
-        val byPred = store.query(GRAPH_ASSISTANT, "我过敏什么")
+        val byPred = store.query(GRAPH_ASSISTANT, "过敏")
         assertEquals(listOf("花生"), byPred.facts.map { it.o })
         assertEquals("- 用户 过敏 花生", byPred.render())
+        assertTrue(store.query(GRAPH_ASSISTANT, "火锅").isEmpty)
     }
 
     @Test
     fun remembersUnfinishedHomework() = runTest {
         val store = InMemoryMemoryStore()
         store.ingest(listOf(TripleDraft(GRAPH_ASSISTANT, "用户", "has_task", "作业")))
-        val hit = store.query(GRAPH_ASSISTANT, "我作业做完了吗")
+        val hit = store.query(GRAPH_ASSISTANT, "作业")
         assertTrue(hit.facts.any { it.p == "has_task" && it.o == "作业" })
         assertEquals("- 用户 待办 作业", hit.facts.single { it.p == "has_task" }.line())
     }
@@ -103,7 +110,7 @@ class InMemoryMemoryStoreTest {
     }
 
     @Test
-    fun allergicToInvalidatesMatchingTasteEdge() = runTest {
+    fun allergicToDoesNotWipeMatchingTasteEdge() = runTest {
         val store = InMemoryMemoryStore()
         store.ingest(
             listOf(
@@ -113,7 +120,21 @@ class InMemoryMemoryStoreTest {
         )
         val facts = store.facts(GRAPH_ASSISTANT).facts
         assertTrue(facts.any { it.p == "allergic_to" && it.o == "花生" })
-        assertTrue(facts.none { it.p == "likes" && it.o == "花生" })
+        assertTrue(facts.any { it.p == "likes" && it.o == "花生" })
+    }
+
+    @Test
+    fun unknownPredicateDoesNotWrite() = runTest {
+        val store = InMemoryMemoryStore()
+        store.ingest(
+            listOf(
+                TripleDraft(GRAPH_ASSISTANT, "用户", "teleports_to", "月球"),
+                TripleDraft(GRAPH_ASSISTANT, "用户", "likes", "茶"),
+                TripleDraft(GRAPH_LINWAN, "林晚", "allergic_to", "花生"),
+            ),
+        )
+        assertEquals(listOf("茶"), store.facts(GRAPH_ASSISTANT).facts.map { it.o })
+        assertTrue(store.facts(GRAPH_LINWAN).isEmpty)
     }
 
     @Test
@@ -182,7 +203,8 @@ class InMemoryMemoryStoreTest {
         assertEquals(1, store.facts(GRAPH_ASSISTANT).facts.size)
         val later = System.currentTimeMillis() + 31L * 24 * 60 * 60 * 1000
         store.forget(GRAPH_ASSISTANT, now = later)
-        assertTrue(store.facts(GRAPH_ASSISTANT).isEmpty)
+        assertEquals(1, store.facts(GRAPH_ASSISTANT).facts.size)
+        assertTrue(store.facts(GRAPH_ASSISTANT, at = later).isEmpty)
     }
 
     @Test
@@ -219,7 +241,7 @@ class InMemoryMemoryStoreTest {
     fun snapshotRoundTripPreservesUnconsumedAndFacts() = runTest {
         val store = InMemoryMemoryStore()
         store.capture(RawTurn(GRAPH_ASSISTANT, "user", "先记着"))
-        store.ingest(listOf(TripleDraft(GRAPH_ASSISTANT, "用户", "likes", "美式咖啡")))
+        store.ingest(listOf(TripleDraft(GRAPH_ASSISTANT, "用户", "likes", "美式")))
         val other = InMemoryMemoryStore()
         other.restore(store.snapshot())
         assertEquals("美式", other.facts(GRAPH_ASSISTANT).facts.single { it.p == "likes" }.o)
@@ -232,8 +254,71 @@ class InMemoryMemoryStoreTest {
     fun remembersYearsWorking() = runTest {
         val store = InMemoryMemoryStore()
         store.ingest(listOf(TripleDraft(GRAPH_ASSISTANT, "用户", "work_years", "两年")))
-        val hit = store.query(GRAPH_ASSISTANT, "我工作几年了")
+        val hit = store.query(GRAPH_ASSISTANT, "两年")
         assertTrue(hit.facts.any { it.p == "work_years" && it.o == "两年" })
         assertEquals("- 用户 工龄 两年", hit.facts.single { it.p == "work_years" }.line())
+    }
+
+    @Test
+    fun retractPlansArchivesOnlyMatchingEdge() = runTest {
+        val store = InMemoryMemoryStore()
+        store.ingest(
+            listOf(
+                TripleDraft(GRAPH_ASSISTANT, "用户", "plans", "美国"),
+                TripleDraft(GRAPH_ASSISTANT, "用户", "plans", "跳槽"),
+            ),
+        )
+        store.ingest(
+            listOf(TripleDraft(GRAPH_ASSISTANT, "用户", "plans", "美国", retract = true)),
+        )
+        val plans = store.facts(GRAPH_ASSISTANT).facts.filter { it.p == "plans" }.map { it.o }
+        assertEquals(listOf("跳槽"), plans)
+        store.rebuildFromFactLog(GRAPH_ASSISTANT)
+        assertEquals(
+            listOf("跳槽"),
+            store.facts(GRAPH_ASSISTANT).facts.filter { it.p == "plans" }.map { it.o },
+        )
+    }
+
+    @Test
+    fun factsHideWorldInvalidatedEdges() = runTest {
+        val store = InMemoryMemoryStore()
+        val now = System.currentTimeMillis()
+        store.ingest(
+            listOf(
+                TripleDraft(
+                    GRAPH_ASSISTANT, "用户", "plans", "美国",
+                    validAt = now - 86_400_000L,
+                    invalidAt = now - 1_000L,
+                ),
+            ),
+        )
+        assertTrue(store.facts(GRAPH_ASSISTANT).isEmpty)
+        assertTrue(store.query(GRAPH_ASSISTANT, "美国").isEmpty)
+    }
+
+    @Test
+    fun factsAsOfSeesEdgeBeforeRetract() = runTest {
+        val store = InMemoryMemoryStore()
+        store.ingest(listOf(TripleDraft(GRAPH_ASSISTANT, "用户", "plans", "美国")))
+        val learned = System.currentTimeMillis()
+        Thread.sleep(15)
+        store.ingest(listOf(TripleDraft(GRAPH_ASSISTANT, "用户", "plans", "美国", retract = true)))
+        assertTrue(store.facts(GRAPH_ASSISTANT).facts.none { it.p == "plans" })
+        assertEquals("美国", store.facts(GRAPH_ASSISTANT, at = learned).facts.single { it.p == "plans" }.o)
+        store.rebuildFromFactLog(GRAPH_ASSISTANT)
+        assertTrue(store.facts(GRAPH_ASSISTANT).facts.none { it.p == "plans" })
+        assertEquals("美国", store.facts(GRAPH_ASSISTANT, at = learned).facts.single { it.p == "plans" }.o)
+    }
+
+    @Test
+    fun functionalSupersedeKeepsAsOfHistory() = runTest {
+        val store = InMemoryMemoryStore()
+        store.ingest(listOf(TripleDraft(GRAPH_ASSISTANT, "用户", "lives_in", "杭州")))
+        val hangzhou = System.currentTimeMillis()
+        Thread.sleep(15)
+        store.ingest(listOf(TripleDraft(GRAPH_ASSISTANT, "用户", "lives_in", "上海")))
+        assertEquals(listOf("上海"), store.facts(GRAPH_ASSISTANT).facts.filter { it.p == "lives_in" }.map { it.o })
+        assertEquals("杭州", store.facts(GRAPH_ASSISTANT, at = hangzhou).facts.single { it.p == "lives_in" }.o)
     }
 }

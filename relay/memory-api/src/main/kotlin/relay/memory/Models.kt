@@ -26,6 +26,25 @@ data class RawEvent(
     val textRef: String = "",
 )
 
+internal data class CleanTriple(
+    val s: String,
+    val p: String,
+    val o: String,
+    val retract: Boolean = false,
+)
+
+data class IngestError(
+    val graphId: String,
+    val s: String,
+    val p: String,
+    val o: String,
+    val reason: String,
+)
+
+data class IngestResult(
+    val errors: List<IngestError> = emptyList(),
+)
+
 data class TripleDraft(
     val graphId: String,
     val s: String,
@@ -33,6 +52,9 @@ data class TripleDraft(
     val o: String,
     val rawEventIds: List<String> = emptyList(),
     val confidence: Double = 0.7,
+    val retract: Boolean = false,
+    val validAt: Long? = null,
+    val invalidAt: Long? = null,
 )
 
 data class Fact(
@@ -78,8 +100,10 @@ internal data class EdgeRec(
     val dstId: String,
     val relation: String,
     val confidence: Double,
-    val validFrom: Long,
-    val validTo: Long?,
+    val createdAt: Long,
+    val expiredAt: Long?,
+    val validAt: Long,
+    val invalidAt: Long?,
     val updatedAt: Long,
     val scope: String,
     val provenance: List<String>,
@@ -95,6 +119,9 @@ internal data class FactLogRec(
     val o: String,
     val confidence: Double,
     val rawEventIds: List<String>,
+    val retract: Boolean = false,
+    val validAt: Long = 0,
+    val invalidAt: Long? = null,
 )
 
 @Serializable

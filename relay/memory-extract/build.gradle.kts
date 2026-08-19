@@ -17,12 +17,14 @@ java {
 }
 
 dependencies {
+    api(project(":relay:memory-api"))
+    api(project(":relay:llm"))
     api(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.sqlite.jdbc)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(project(":relay:agent-core"))
 }
 
 tasks.test {

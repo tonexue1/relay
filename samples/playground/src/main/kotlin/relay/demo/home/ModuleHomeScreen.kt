@@ -49,7 +49,7 @@ enum class RelayModule(
     ),
     Memory(
         artifact = "relay/memory-api",
-        summary = "个人助手记忆:原文 capture、云端抽三元组、本机图谱召回",
+        summary = "本机图谱:三波手写入库，对话看 FTS 召回。不测抽取",
         available = true,
     ),
     UiKit(

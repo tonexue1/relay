@@ -1,9 +1,11 @@
-package relay.memory
+package relay.memory.extract
+
+import relay.memory.GRAPH_ASSISTANT
+import relay.memory.TripleDraft
 
 /**
- * Regression play for extract → clean → ingest → recall.
- * Gold is the cortex; [NOISY] is a typical cloud dump. Add a scene here
- * before growing one-off predicates.
+ * Regression play for extract → ingest → recall.
+ * Lives next to the cloud extractor, not in the store.
  */
 object AssistantPlay {
     const val SAMPLE_PROMPT: String =
@@ -21,30 +23,30 @@ object AssistantPlay {
         |助理: 记下了。
         """.trimMargin()
 
-    internal val GOLD: List<CleanTriple> = listOf(
-        CleanTriple("用户", "child_of", "妈妈"),
-        CleanTriple("妈妈", "likes", "花生"),
-        CleanTriple("用户", "allergic_to", "花生"),
-        CleanTriple("用户", "lives_in", "杭州"),
-        CleanTriple("用户", "has_pet", "猫"),
-        CleanTriple("猫", "named", "芝麻"),
-        CleanTriple("用户", "has_task", "作业"),
-        CleanTriple("用户", "works_at", "阿里"),
-        CleanTriple("用户", "works_as", "客户端"),
-        CleanTriple("用户", "work_years", "两年"),
-        CleanTriple("用户", "work_location", "西溪"),
-        CleanTriple("用户", "alumni_of", "浙大"),
-        CleanTriple("用户", "colleague_of", "王磊"),
-        CleanTriple("用户", "likes", "美式"),
-        CleanTriple("用户", "dislikes", "香菜"),
-        CleanTriple("用户", "prefers", "地铁"),
-        CleanTriple("用户", "diet", "素食"),
-        CleanTriple("用户", "takes", "钙片"),
-        CleanTriple("用户", "plans", "上海"),
-        CleanTriple("上海", "located_in", "静安"),
-        CleanTriple("用户", "knows_language", "英语"),
-        CleanTriple("用户", "friend_of", "李娜"),
-        CleanTriple("用户", "plans", "跳槽"),
+    internal val GOLD: List<TripleDraft> = listOf(
+        TripleDraft(GRAPH_ASSISTANT, "用户", "child_of", "妈妈"),
+        TripleDraft(GRAPH_ASSISTANT, "妈妈", "likes", "花生"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "allergic_to", "花生"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "lives_in", "杭州"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "has_pet", "猫"),
+        TripleDraft(GRAPH_ASSISTANT, "猫", "named", "芝麻"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "has_task", "作业"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "works_at", "阿里"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "works_as", "客户端"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "work_years", "两年"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "work_location", "西溪"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "alumni_of", "浙大"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "colleague_of", "王磊"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "likes", "美式"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "dislikes", "香菜"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "prefers", "地铁"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "diet", "素食"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "takes", "钙片"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "plans", "上海"),
+        TripleDraft(GRAPH_ASSISTANT, "上海", "located_in", "静安"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "knows_language", "英语"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "friend_of", "李娜"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "plans", "离职"),
     )
 
     internal val MUST_COVER: Set<String> = setOf(
@@ -69,7 +71,7 @@ object AssistantPlay {
         TripleDraft(GRAPH_ASSISTANT, "用户", "likes", "花生过敏"),
         TripleDraft(GRAPH_ASSISTANT, "芝麻", "named", "猫"),
         TripleDraft(GRAPH_ASSISTANT, "用户", "plans", "作业没做完"),
-        TripleDraft(GRAPH_ASSISTANT, "用户", "works_at", "两年了"),
+        TripleDraft(GRAPH_ASSISTANT, "用户", "works_at", "两年"),
         TripleDraft(GRAPH_ASSISTANT, "用户", "works_at", "阿里"),
         TripleDraft(GRAPH_ASSISTANT, "用户", "works_as", "客户端"),
         TripleDraft(GRAPH_ASSISTANT, "用户", "located_in", "杭州"),
@@ -89,18 +91,18 @@ object AssistantPlay {
     )
 
     internal val CUES: List<PlayCue> = listOf(
-        PlayCue("今晚想吃火锅，有什么别踩的雷？", "用户", "allergic_to", "花生"),
-        PlayCue("我妈爱吃什么", "妈妈", "likes", "花生"),
-        PlayCue("作业做完了吗", "用户", "has_task", "作业"),
-        PlayCue("我工作几年了", "用户", "work_years", "两年"),
-        PlayCue("猫叫什么", "猫", "named", "芝麻"),
-        PlayCue("我在哪上班", "用户", "works_at", "阿里"),
-        PlayCue("通勤怎么走", "用户", "prefers", "地铁"),
-        PlayCue("能吃肉吗", "用户", "diet", "素食"),
-        PlayCue("药停了没", "用户", "takes", "钙片"),
-        PlayCue("下周去哪", "用户", "plans", "上海"),
-        PlayCue("我同事是谁", "用户", "colleague_of", "王磊"),
-        PlayCue("会说英语吗", "用户", "knows_language", "英语"),
+        PlayCue("花生", "用户", "allergic_to", "花生"),
+        PlayCue("妈妈", "妈妈", "likes", "花生"),
+        PlayCue("作业", "用户", "has_task", "作业"),
+        PlayCue("两年", "用户", "work_years", "两年"),
+        PlayCue("芝麻", "猫", "named", "芝麻"),
+        PlayCue("阿里", "用户", "works_at", "阿里"),
+        PlayCue("地铁", "用户", "prefers", "地铁"),
+        PlayCue("素食", "用户", "diet", "素食"),
+        PlayCue("钙片", "用户", "takes", "钙片"),
+        PlayCue("上海", "用户", "plans", "上海"),
+        PlayCue("王磊", "用户", "colleague_of", "王磊"),
+        PlayCue("英语", "用户", "knows_language", "英语"),
     )
 
     internal fun goldKeys(): Set<Triple<String, String, String>> =

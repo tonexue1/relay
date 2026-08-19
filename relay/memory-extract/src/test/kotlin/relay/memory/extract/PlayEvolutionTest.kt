@@ -1,10 +1,13 @@
-package relay.memory
+package relay.memory.extract
 
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import relay.llm.model.Message
+import relay.memory.GRAPH_ASSISTANT
+import relay.memory.InMemoryMemoryStore
+import relay.memory.PREDICATES
 
 class PlayEvolutionTest {
 
@@ -16,25 +19,22 @@ class PlayEvolutionTest {
     }
 
     @Test
-    fun noisyCloudDumpCleansToGold() {
-        val cleaned = cleanTriples(AssistantPlay.NOISY, chunk = AssistantPlay.DIALOGUE)
-        assertEquals(AssistantPlay.goldKeys(), cleaned.map { Triple(it.s, it.p, it.o) }.toSet())
-    }
-
-    @Test
-    fun extractorCleansPlayNoise() = runTest {
+    fun extractorPassesThroughModelJson() = runTest {
         val drafts = CloudTripleExtractor(
             RecordingProvider(AssistantPlay.noisyJson()),
             model = "fake-model",
         ).extract(GRAPH_ASSISTANT, AssistantPlay.DIALOGUE, listOf("play"))
-        assertEquals(AssistantPlay.goldKeys(), drafts.map { Triple(it.s, it.p, it.o) }.toSet())
+        assertEquals(
+            AssistantPlay.NOISY.map { Triple(it.s, it.p, it.o) }.toSet(),
+            drafts.map { Triple(it.s, it.p, it.o) }.toSet(),
+        )
         assertTrue(drafts.all { it.rawEventIds == listOf("play") })
     }
 
     @Test
     fun secondActRecallsStandingFacts() = runTest {
         val store = InMemoryMemoryStore()
-        store.ingest(AssistantPlay.GOLD.map { TripleDraft(GRAPH_ASSISTANT, it.s, it.p, it.o) })
+        store.ingest(AssistantPlay.GOLD)
         for (cue in AssistantPlay.CUES) {
             val hit = store.query(GRAPH_ASSISTANT, cue.query)
             assertTrue(
@@ -45,11 +45,11 @@ class PlayEvolutionTest {
     }
 
     @Test
-    fun rememberingPadsFirepotWithoutSayingPeanut() = runTest {
+    fun rememberingPadsWhenQueryHitsPeanut() = runTest {
         val store = InMemoryMemoryStore()
-        store.ingest(AssistantPlay.GOLD.map { TripleDraft(GRAPH_ASSISTANT, it.s, it.p, it.o) })
+        store.ingest(AssistantPlay.GOLD)
         val out = store.remembering(GRAPH_ASSISTANT)(
-            listOf(Message.user("今晚想吃火锅，有什么别踩的雷？")),
+            listOf(Message.user("今晚能吃花生吗")),
         )
         val padded = out.first().content.orEmpty()
         assertTrue(padded.contains("已知事实"))

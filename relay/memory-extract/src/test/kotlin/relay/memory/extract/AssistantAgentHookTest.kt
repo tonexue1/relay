@@ -1,4 +1,4 @@
-package relay.memory
+package relay.memory.extract
 
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -9,6 +9,9 @@ import org.junit.jupiter.api.Test
 import relay.agent.Agent
 import relay.agent.AgentConfig
 import relay.llm.model.Role
+import relay.memory.GRAPH_ASSISTANT
+import relay.memory.InMemoryMemoryStore
+import relay.memory.TripleDraft
 
 class AssistantAgentHookTest {
 

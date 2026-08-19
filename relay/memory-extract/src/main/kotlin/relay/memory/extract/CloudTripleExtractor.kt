@@ -1,4 +1,4 @@
-package relay.memory
+package relay.memory.extract
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -8,10 +8,13 @@ import relay.llm.Provider
 import relay.llm.model.ChatRequest
 import relay.llm.model.Message
 import relay.llm.provider.DeepSeek
+import relay.memory.Fact
+import relay.memory.PREDICATES
+import relay.memory.RawEvent
+import relay.memory.TripleDraft
+import relay.memory.predicateLabel
 
-/**
- * Cloud extract plugin. Not part of [MemoryStore].
- */
+/** Cloud extract plugin. Talks to a [Provider]; the graph store never does. */
 class CloudTripleExtractor(
     private val provider: Provider,
     private val model: String = DeepSeek.CHAT,
@@ -20,9 +23,10 @@ class CloudTripleExtractor(
         graphId: String,
         dialogue: String,
         rawEventIds: List<String>,
+        priorFacts: List<Fact> = emptyList(),
     ): List<TripleDraft> {
         if (dialogue.isBlank()) return emptyList()
-        val messages = extractMessages(dialogue)
+        val messages = extractMessages(dialogue, priorFacts)
         val response = provider.chat(
             ChatRequest(
                 model = model,
@@ -35,15 +39,15 @@ class CloudTripleExtractor(
             ),
         )
         val raw = response.message.content.orEmpty()
-        val parsed = parseTriplesJson(raw)
-        val cleaned = cleanTriples(
-            parsed.map {
-                TripleDraft(graphId = graphId, s = it.s, p = it.p, o = it.o, rawEventIds = rawEventIds)
-            },
-            chunk = dialogue,
-        )
-        return cleaned.map {
-            TripleDraft(graphId = graphId, s = it.s, p = it.p, o = it.o, rawEventIds = rawEventIds)
+        return parseTriplesJson(raw).map {
+            TripleDraft(
+                graphId = graphId,
+                s = it.s,
+                p = it.p,
+                o = it.o,
+                rawEventIds = rawEventIds,
+                retract = it.retract,
+            )
         }
     }
 
@@ -55,7 +59,7 @@ class CloudTripleExtractor(
     }
 }
 
-internal fun extractMessages(chunk: String): List<Message> {
+internal fun extractMessages(chunk: String, priorFacts: List<Fact> = emptyList()): List<Message> {
     val rels = PREDICATES.joinToString("、")
     val messages = mutableListOf(
         Message.system("$EXTRACT_SYSTEM\n关系词表：$rels"),
@@ -64,8 +68,21 @@ internal fun extractMessages(chunk: String): List<Message> {
         messages += Message.user("对话：\n${ex.first}")
         messages += Message.assistant(ex.second)
     }
-    messages += Message.user("对话：\n$chunk\n\n只输出 JSON。")
+    messages += Message.user(extractUserPrompt(chunk, priorFacts))
     return messages
+}
+
+internal fun extractUserPrompt(chunk: String, priorFacts: List<Fact> = emptyList()): String = buildString {
+    if (priorFacts.isNotEmpty()) {
+        append("已有事实：\n")
+        for (fact in priorFacts) {
+            append("- ${fact.s} ${predicateLabel(fact.p)} ${fact.o}\n")
+        }
+        append('\n')
+    }
+    append("对话：\n")
+    append(chunk)
+    append("\n\n只输出 JSON。")
 }
 
 internal fun parseTriplesJson(raw: String): List<ParsedTriple> {
@@ -77,14 +94,14 @@ internal fun parseTriplesJson(raw: String): List<ParsedTriple> {
             val s = item.s?.trim().orEmpty()
             val p = item.p?.trim().orEmpty()
             val o = item.o?.trim().orEmpty()
-            if (s.isEmpty() || p.isEmpty() || o.isEmpty()) null else ParsedTriple(s, p, o)
+            if (s.isEmpty() || p.isEmpty() || o.isEmpty()) null else ParsedTriple(s, p, o, item.retract == true)
         }
     } catch (_: Exception) {
         emptyList()
     }
 }
 
-internal data class ParsedTriple(val s: String, val p: String, val o: String)
+internal data class ParsedTriple(val s: String, val p: String, val o: String, val retract: Boolean = false)
 
 private fun stripFence(text: String): String {
     var body = text.trim()
@@ -103,6 +120,7 @@ private data class ExtractTriple(
     val s: String? = null,
     val p: String? = null,
     val o: String? = null,
+    val retract: Boolean? = null,
 )
 
 private val EXTRACT_JSON = Json {
@@ -123,6 +141,7 @@ located_in 只用于地点→地点。work_location 是办公地，lives_in 是�
 素食/清真 = diet。拥有物 owns。参加的活动 attends。会的语言 knows_language。
 想换工作、离职、说拜拜 = plans 跳槽。想歇一阵 = plans 休息。
 作业/功课没做完、还要交X = has_task X，不要写成 likes 或 plans。
+取消、不打算去了、签证没过 = 对已有 plans 输出同一主谓宾并加 "retract":true，不要再写一条正向 plans。没点名且只有一条打算时，retract 那一条。
 工作N年了、工龄N年 = work_years N年（两年、三年），不要写成 works_at。
 吃素/素食/清真 = diet；英语/日语 = knows_language，不要写成 skilled_in。
 有个人事实就必须抽；空列表只用于纯闲聊。"""
@@ -140,5 +159,7 @@ private val EXTRACT_FEWSHOT: List<Pair<String, String>> = listOf(
         """{"triples":[{"s":"用户","p":"has_task","o":"作业"}]}""",
     "用户: 我工作两年了。\n助理: 记下了。" to
         """{"triples":[{"s":"用户","p":"work_years","o":"两年"}]}""",
+    "已有事实：\n- 用户 打算 美国\n对话：\n用户: 我不打算去了，签证没过。\n助理: 好。" to
+        """{"triples":[{"s":"用户","p":"plans","o":"美国","retract":true}]}""",
     AssistantPlay.DIALOGUE to AssistantPlay.goldJson(),
 )

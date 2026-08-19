@@ -54,6 +54,8 @@ dependencies {
     implementation(project(":relay:agent-core"))
     implementation(project(":relay:orchestra"))
     implementation(project(":relay:memory-api"))
+    implementation(project(":relay:memory-extract"))
+    implementation(libs.androidx.sqlite.bundled)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

@@ -22,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -63,6 +62,11 @@ fun AssistantScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
+                        Text(
+                            "不测抽取。三波手写三元组直接 ingest，下面「本轮召回」是引擎 FTS 取出来的，和模型答得好不好无关。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         OutlinedTextField(
                             value = state.apiKey,
                             onValueChange = viewModel::onApiKeyChange,
@@ -70,7 +74,7 @@ fun AssistantScreen(
                             singleLine = true,
                             enabled = !state.running,
                             visualTransformation = PasswordVisualTransformation(),
-                            supportingText = { Text("抽取走云端 DeepSeek；图留在本机 filesDir") },
+                            supportingText = { Text("只给对话用。入库和召回不走模型。") },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -83,39 +87,68 @@ fun AssistantScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Text("已记住", style = MaterialTheme.typography.labelLarge)
+                        Text("三波入库", style = MaterialTheme.typography.labelLarge)
+                        AssistantCorpus.waves.forEachIndexed { index, wave ->
+                            OutlinedButton(
+                                onClick = { viewModel.seedWave(index) },
+                                enabled = !state.seeding && !state.running,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("${wave.title} · ${wave.drafts.size} 条")
+                            }
+                            Text(
+                                wave.hint,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (state.seedNote.isNotBlank()) {
+                            Text(state.seedNote, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        if (state.seeding) {
+                            CircularProgressIndicator(strokeWidth = 2.dp)
+                        }
+                    }
+                }
+            }
+
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text("活图 (${state.factCount})", style = MaterialTheme.typography.labelLarge)
                         SelectionContainer {
                             Text(
-                                text = state.facts.ifBlank { "还没有事实。先说一件私事，发送后会自动整理。" },
+                                text = state.facts.ifBlank { "还没有事实。按 1→2→3 入库。" },
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontFamily = FontFamily.Monospace,
                             )
                         }
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Switch(
-                                checked = state.cloudOk,
-                                onCheckedChange = viewModel::onCloudOkChange,
-                                enabled = !state.organizing && !state.running,
+                    }
+                }
+            }
+
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text("本轮召回", style = MaterialTheme.typography.labelLarge)
+                        SelectionContainer {
+                            Text(
+                                text = state.recallPad.ifBlank { "（空）引擎没取到" },
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontFamily = FontFamily.Monospace,
                             )
-                            Text("允许上云", style = MaterialTheme.typography.bodyMedium)
-                            OutlinedButton(
-                                onClick = viewModel::organize,
-                                enabled = !state.organizing && !state.running && state.unconsumed > 0,
-                            ) {
-                                Text("整理记忆 (${state.unconsumed})")
-                            }
-                            if (state.organizing) {
-                                CircularProgressIndicator(strokeWidth = 2.dp)
-                            }
                         }
-                        Text(
-                            "默认不上云。打开后再整理，原文才会送给 DeepSeek。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                 }
             }
@@ -179,27 +212,35 @@ fun AssistantScreen(
                         OutlinedTextField(
                             value = state.prompt,
                             onValueChange = viewModel::onPromptChange,
-                            label = { Text("跟助手说") },
+                            label = { Text("问一句，看上面召回垫了什么") },
                             enabled = !state.running,
                             minLines = 2,
                             modifier = Modifier.fillMaxWidth(),
                         )
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SAMPLE_PROMPTS.forEach { (label, prompt) ->
+                            AssistantCorpus.probes.forEach { probe ->
                                 FilterChip(
-                                    selected = state.prompt == prompt,
-                                    onClick = { viewModel.onPromptChange(prompt) },
+                                    selected = state.prompt == probe.prompt,
+                                    onClick = { viewModel.onPromptChange(probe.prompt) },
                                     enabled = !state.running,
-                                    label = { Text(label) },
+                                    label = { Text(probe.label) },
                                 )
                             }
+                        }
+                        val expect = AssistantCorpus.probes.firstOrNull { it.prompt == state.prompt }?.expect
+                        if (expect != null) {
+                            Text(
+                                "预期: $expect",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Button(onClick = viewModel::send, enabled = state.canSend) {
-                                Text("发送")
+                                Text("发给模型")
                             }
                             TextButton(onClick = viewModel::resetChat, enabled = !state.running) {
                                 Text("清空对话")

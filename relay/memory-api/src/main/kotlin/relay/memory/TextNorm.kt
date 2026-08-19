@@ -8,16 +8,7 @@ internal fun nfkcCompact(text: String): String =
         .lowercase()
         .replace(Regex("\\s+"), "")
 
-internal fun normalizeText(
-    text: String,
-    aliases: Map<String, String> = DEFAULT_ALIASES,
-): String {
-    var value = nfkcCompact(text)
-    aliases.entries.sortedByDescending { it.key.length }.forEach { (src, dst) ->
-        value = value.replace(nfkcCompact(src), nfkcCompact(dst))
-    }
-    return value
-}
+internal fun normalizeText(text: String): String = nfkcCompact(text)
 
 internal fun Char.isCjk(): Boolean {
     val type = Character.UnicodeBlock.of(this) ?: return false

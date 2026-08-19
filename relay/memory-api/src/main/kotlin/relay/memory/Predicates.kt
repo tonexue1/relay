@@ -82,91 +82,6 @@ val FUNCTIONAL_PREDICATES: Set<String> = setOf(
     "work_years",
 )
 
-internal val DEFAULT_ALIASES: Map<String, String> = mapOf(
-    "美式咖啡" to "美式",
-    "坐地铁" to "地铁",
-    "花生酱" to "花生",
-    "花生米" to "花生",
-    "杭州市" to "杭州",
-    "离职" to "跳槽",
-    "换工作" to "跳槽",
-    "吃素" to "素食",
-    "素食主义" to "素食",
-    "我妈" to "妈妈",
-    "我爸" to "爸爸",
-    "功课" to "作业",
-    "两年了" to "两年",
-    "2年" to "两年",
-    "英文" to "英语",
-)
-
-internal val OTHER_SUBJECT_PREDICATES: Set<String> = setOf(
-    "named",
-    "lives_in",
-    "located_in",
-    "born_in",
-    "work_location",
-    "family_of",
-    "spouse_of",
-    "parent_of",
-    "child_of",
-    "sibling_of",
-    "friend_of",
-    "likes",
-    "dislikes",
-    "prefers",
-    "allergic_to",
-    "diet",
-    "takes",
-    "plans",
-    "has_task",
-    "work_years",
-    "owns",
-)
-
-internal val PREDICATE_QUERY_HINTS: Map<String, List<String>> = mapOf(
-    "allergic_to" to listOf("过敏", "火锅", "忌口", "踩雷", "蘸料"),
-    "diet" to listOf("饮食", "吃素", "素食", "清真", "吃肉", "荤"),
-    "takes" to listOf("在服用", "吃药", "停药", "维生素", "钙片", "药"),
-    "has_task" to listOf("作业", "功课", "待办", "做完了"),
-    "work_years" to listOf("工龄", "工作几", "工作多", "工作两", "工作年"),
-    "works_at" to listOf("就职于", "哪上班", "在哪上班", "公司"),
-    "works_as" to listOf("职位是", "岗位"),
-    "work_location" to listOf("办公地", "办公"),
-    "lives_in" to listOf("住在", "住哪"),
-    "prefers" to listOf("更倾向", "通勤"),
-    "has_pet" to listOf("养宠物", "猫叫", "养狗"),
-    "named" to listOf("名叫", "叫什么"),
-    "plans" to listOf("打算", "下周去", "跳槽"),
-    "colleague_of" to listOf("同事是", "同事"),
-    "child_of" to listOf("父母是", "我妈", "我爸"),
-    "likes" to listOf("喜欢", "爱吃"),
-    "knows_language" to listOf("会说", "英语"),
-    "alumni_of" to listOf("毕业于", "毕业"),
-    "related_to" to listOf("相关", "师父", "徒儿"),
-    "wants" to listOf("想要", "翻案"),
-    "foreshadow" to listOf("伏笔", "未收束"),
-    "has_item" to listOf("持有", "腰牌", "旧牌", "账本"),
-    "status" to listOf("状态", "已死", "失踪"),
-    "knows" to listOf("知道", "秘密", "假腰牌"),
-    "appears_in" to listOf("出场于"),
-)
-
-internal val LANGUAGES: Set<String> = setOf("英语", "中文", "汉语", "日语", "法语", "德语", "韩语", "西班牙语")
-
-internal val DIET_OBJECTS: Set<String> = setOf("吃素", "素食", "素食主义", "素", "清真")
-
-internal val PETS: Set<String> = setOf("猫", "狗", "宠物")
-
-internal val KINSHIP_CHILD_OF: Map<String, String> = mapOf(
-    "妈妈" to "妈妈",
-    "妈" to "妈妈",
-    "母亲" to "妈妈",
-    "爸爸" to "爸爸",
-    "爸" to "爸爸",
-    "父亲" to "爸爸",
-)
-
 val NOVEL_PREDICATES: Set<String> = linkedSetOf(
     "is_a",
     "named",
@@ -206,7 +121,7 @@ internal fun graphPredicates(graphId: String): Set<String> =
 internal fun graphFunctionalPredicates(graphId: String): Set<String> =
     if (isNovelGraph(graphId)) NOVEL_FUNCTIONAL_PREDICATES else FUNCTIONAL_PREDICATES
 
-internal fun predicateLabel(p: String): String =
+fun predicateLabel(p: String): String =
     PREDICATE_ZH[p] ?: NOVEL_PREDICATE_ZH[p] ?: p
 
 internal val SENSITIVE_PREDICATES: Set<String> = setOf("allergic_to", "takes", "diet")

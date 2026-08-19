@@ -1,6 +1,7 @@
 # Relay · 记忆引擎(非 LLM)
 
-> 状态:设计备忘(2026-08-18)。不是实现 spec。
+> 调用合同：[memory-api.md](./memory-api.md)（关系、时钟、原语）。本文是设计备忘，不是 spec。
+> 状态:设计备忘(2026-08-19)。
 > 问题:不含模型的记忆引擎怎么存、怎么合、怎么查、怎么忘。
 > 抽取在云。端侧小模型不在本设计视野。v1 只做个人助手;`novel:{id}` 分仓已通手抽入库(林晚十回,一章一存),云端抽取未接。存储是 SQLite + FTS5。Orchestra 工作记忆见 [multi-agent-memory.md](./multi-agent-memory.md)。
 
@@ -12,8 +13,12 @@
 
 ```
 capture  原文落盘 + 记 raw_event
-ingest   把外面送来的三元组幂等写进图
-query    FTS5 + 一跳邻居,吐出短事实列表
+ingest   把外面送来的三元组按字写入；坏稿进 errors
+query    字面 FTS5 + 一跳邻居,吐出短事实列表
+facts    活边；可按 p / node 过滤
+recent   系统钟上近期写入或过期的边
+neighborhood 仍活的邻居边
+mergeNodes 系统过期 drop 边，缺则在 keep 上插入
 forget   剪边、不剪日志
 ```
 
@@ -53,7 +58,7 @@ forget   剪边、不剪日志
   CloudExtract(片段) → TripleDraft[]   ← 唯一碰 LLM 的地方,在引擎外
        │ ingest(drafts)
        ▼
-  规范化 → 对节点 → upsert 边 → provenance → FTS
+  按字写入 → 对节点 → upsert 边 → provenance → FTS
        │
        │ 下次 prompt 前
        ▼
@@ -157,7 +162,7 @@ raw_event(
 )
 
 fact_log(
-  id, graph_id, ts, s, p, o, confidence, raw_event_ids
+  id, graph_id, ts, s, p, o, confidence, raw_event_ids, retract, valid_at, invalid_at
 )
 
 node(
@@ -167,7 +172,7 @@ node(
 node_alias(graph_id, node_id, alias)
 edge(
   id, graph_id, src, dst, relation, confidence,
-  valid_from, valid_to, updated_at, scope
+  created_at, expired_at, valid_at, invalid_at, updated_at, scope
 )
 provenance(edge_id, raw_event_id)
 
@@ -177,9 +182,25 @@ CREATE VIRTUAL TABLE node_fts
   USING fts5(canonical_name, summary, content='node');
 ```
 
+TODO: `relation(graph_id, p, label_zh, functional, scope, …)` 单独一张表登记边类型；词表从代码迁进去。`ingest` 仍拒未登记 `p`；新增用 `defineRelation`，不让抽取 INSERT。关系不当节点存。
+
 `node.type` day 1 只用:`person | place | thing | pet | org | other`。用户节点固定 id = `user`(canonical_name=`用户`)。
 
 边的幂等键:`(src, relation, dst)`。同一键再来 = 升 confidence、加 provenance、刷新 `updated_at`,不插第二行。
+
+边是双时钟(跟 Graphiti 同一套名字):
+
+- 系统:`created_at` / `expired_at` — 图什么时候学到、什么时候从活图拿掉(forget / 审核拒绝只动这条)
+- 世界:`valid_at` / `invalid_at` — 事实在现实里从何时为真、何时结束(retract / 功能边 supersede / 过敏冲掉口味,两边一起打)
+
+`query` / `facts` 的 `at`(默认现在)要四条都过:
+
+```
+created_at <= at AND (expired_at IS NULL OR expired_at > at)
+AND valid_at <= at AND (invalid_at IS NULL OR invalid_at > at)
+```
+
+Agent 可在 `TripleDraft.validAt` / `invalidAt` 填世界时间;不填则 `valid_at = created_at`。schema version 4,Android 升版本会 drop 重建。
 
 ---
 
@@ -187,7 +208,7 @@ CREATE VIRTUAL TABLE node_fts
 
 ### 4.0 谓语闭集
 
-词表以本表、`relay/memory-api` 的 `PREDICATES`、以及回归话剧 `AssistantPlay` 为准。新口语先加进话剧和 `PlayEvolutionTest`，再决定要不要加谓语。
+词表以本表、`relay/memory-api` 的 `PREDICATES`、以及回归话剧 `relay/memory-extract` 的 `AssistantPlay` 为准。新口语先加进话剧和 `PlayEvolutionTest`，再决定要不要加谓语。
 
 | p | 中文 | 基数 |
 |---|---|---|
@@ -222,14 +243,13 @@ CREATE VIRTUAL TABLE node_fts
 | `work_years` | 工龄 | 功能 |
 | `located_in` | 位于 | 集合 |
 
-功能边:同一 `src+p` 来了不同 `o` → 旧边 `valid_to`,新边 supersede。集合边可并存。`family_of` 仅在说不清亲疏时用;能分清则用 `child_of` / `parent_of` / `spouse_of` / `sibling_of`。
+功能边:同一 `src+p` 来了不同 `o` → 旧边打 `expired_at`+`invalid_at`,新边 supersede。集合边可并存。`family_of` 仅在说不清亲疏时用;能分清则用 `child_of` / `parent_of` / `spouse_of` / `sibling_of`。
 
 ### 4.1 规范化(ingest 第一步)
 
 对 `s` / `o` 做和评测台相同的纪律,全部代码:
 
 - NFKC、去空白、小写拉丁
-- 别名表(花生酱→花生,离职→跳槽,美式咖啡→美式)
 - 谓语必须在闭集(见 §4.0);否则丢进 `pending_review` 或直接丢
 - 主语 `助理` 丢弃;`named` 只允许宠物类型节点
 
@@ -251,7 +271,7 @@ day 1 **不用 embedding**。对不上就新节点,宁可碎,靠 alias 以后合
 ingest 一条边之后跑规则,不跑模型:
 
 - 同一 `src+relation`、`dst` 不同且两 dst 未合并 → `pending_review(contradiction)`(例如两个 `lives_in`)
-- `valid_to IS NULL` 的旧边与新边冲突 → 旧边打 `valid_to=now`,新边 `supersedes`,进晨报
+- 当前边与新边冲突 → 旧边打 `expired_at=now` 且 `invalid_at=now`(已有世界结束时间则不覆盖),新边 `supersedes`,进晨报
 - `allergic_to X` 与 `likes/prefers X` 同 src → 丢掉 taste 边(评测台已验证这条规则)
 
 传递闭包**不做**。多跳在 query 时现走 1 hop,够 L2 起步。
@@ -261,7 +281,7 @@ ingest 一条边之后跑规则,不跑模型:
 输入:本轮用户话(或小说本章大纲);输出:≤K 条短事实(给 `transformContext` 垫到投影头部)。
 
 1. 用简单切词(空白 + 连续 CJK 二元)拼 FTS5 `MATCH`;节点检索只走 FTS,不用 `instr` 回退。闭集谓语的中文提示(过敏、工龄…)仍可直接命中边。
-2. 命中 node → `SELECT` 其作为 src 或 dst、且 `valid_to IS NULL` 的边
+2. 命中 node → `SELECT` 其作为 src 或 dst、且在 `at` 仍有效的边(双时钟,见 §3)
 3. 按 `confidence * recency` 排序,截断到字符预算(默认约 2k 字,避免整图倾倒;不按端侧窗卡)
 4. 渲染成 `- 用户 allergic_to 花生` 这种行,不要段落
 
@@ -280,8 +300,9 @@ ingest 一条边之后跑规则,不跑模型:
 ## 5. 接口(纯 Kotlin,无 Provider)
 
 ```
-relay/memory-api       MemoryStore / SqliteMemoryStore(SQLite + FTS5)
-samples/playground     同一套 schema,Android SQLiteOpenHelper 落 filesDir
+relay/memory-api       MemoryStore / SqliteMemoryStore(SQLite + FTS5)。没有 LLM。
+relay/memory-extract   云端抽取插件(Provider)和 Agent 垫事实。图不在这里。
+samples/playground     同一套 schema,bundled SQLite 落 filesDir
 ```
 
 ```kotlin
@@ -293,7 +314,9 @@ interface MemoryStore {
         text: String,
         budgetChars: Int = 2000,
         principal: String = "user",
+        at: Long = ...,
     ): MemoryHit
+    suspend fun facts(graphId: String, at: Long = ...): MemoryHit
     suspend fun forget(graphId: String, now: Long = ...)
     suspend fun pendingReview(graphId: String): List<ReviewItem>
     suspend fun resolveReview(graphId: String, edgeId: String, accept: Boolean)
@@ -305,6 +328,9 @@ data class TripleDraft(
     val s: String, val p: String, val o: String,
     val rawEventIds: List<String>,
     val confidence: Double = 0.7,
+    val retract: Boolean = false,
+    val validAt: Long? = null,
+    val invalidAt: Long? = null,
 )
 ```
 
@@ -312,7 +338,7 @@ data class TripleDraft(
 
 ### 5.1 挂到 Agent(不改 agent-core)
 
-`Agent` 不接收 `MemoryStore`。挂点只有两个现成钩子,和 GroupChat 垫 Scene 的方式一样。
+`Agent` 不接收 `MemoryStore`。挂点在 `relay/memory-extract` 的 `remembering()`,和 GroupChat 垫 Scene 的方式一样。
 
 **坑:** `Agent.withSystem` 会丢掉 `transformContext` 产出的所有 `Role.SYSTEM`,只保留 `state.systemPrompt`。事实**不能**做成 system 消息。产品路径学 `projectIntoContext`:垫一条**不写回 transcript** 的 `Message.user`。
 

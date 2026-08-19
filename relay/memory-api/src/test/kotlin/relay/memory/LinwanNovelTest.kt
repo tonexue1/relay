@@ -1,7 +1,6 @@
 package relay.memory
 
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
@@ -27,24 +26,10 @@ class LinwanNovelTest {
     }
 
     @Test
-    fun cleanerKeepsEveryChapterFactIncludingRelatedTo() {
-        for (chapter in LinwanNovel.CHAPTERS) {
-            val drafts = chapter.drafts()
-            val cleaned = cleanTriples(drafts)
-            assertEquals(
-                drafts.map { Triple(it.s, it.p, it.o) }.toSet(),
-                cleaned.map { Triple(it.s, it.p, it.o) }.toSet(),
-                "chapter ${chapter.n} ${chapter.title}",
-            )
-        }
-    }
-
-    @Test
-    fun assistantPredicatesAreDroppedOnNovelGraph() {
-        val cleaned = cleanTriples(
-            listOf(TripleDraft(GRAPH_LINWAN, "林晚", "allergic_to", "花生")),
-        )
-        assertTrue(cleaned.isEmpty())
+    fun assistantPredicateDoesNotWriteOnNovelGraph() = runTest {
+        val store = InMemoryMemoryStore()
+        store.ingest(listOf(TripleDraft(GRAPH_LINWAN, "林晚", "allergic_to", "花生")))
+        assertTrue(store.facts(GRAPH_LINWAN).isEmpty)
     }
 
     @Test
@@ -88,14 +73,14 @@ class LinwanNovelTest {
         assertTrue(linwan.facts.any { it.p == "knows" && it.o == "账本秘密" }, linwan.render())
         assertTrue(linwan.facts.any { it.p == "knows" && it.o == "假腰牌" }, linwan.render())
 
-        val master = store.query(GRAPH_LINWAN, "林晚的师父")
+        val master = store.query(GRAPH_LINWAN, "赵捕头")
         assertTrue(master.facts.any { it.p == "related_to" && (it.s == "林晚" || it.o == "赵捕头") }, master.render())
 
         val axiu = store.query(GRAPH_LINWAN, "阿秀")
         assertTrue(axiu.facts.any { it.p == "related_to" && it.o == "王二" }, axiu.render())
         assertTrue(axiu.facts.any { it.p == "status" && it.o == "失踪" }, axiu.render())
 
-        val thread = store.query(GRAPH_LINWAN, "未收束的伏笔")
+        val thread = store.query(GRAPH_LINWAN, "未收束")
         assertTrue(thread.facts.any { it.s == "账本" && it.p == "foreshadow" }, thread.render())
     }
 

@@ -43,19 +43,47 @@ open class SqliteMemoryStore(
         id
     }
 
-    override suspend fun ingest(drafts: List<TripleDraft>) = lock.withLock {
+    override suspend fun ingest(drafts: List<TripleDraft>): IngestResult = lock.withLock {
+        val errors = mutableListOf<IngestError>()
         db.transaction {
             for (draft in drafts) {
                 requireGraph(draft.graphId)
-                val cleaned = cleanTriples(listOf(draft), chunk = "")
-                for (triple in cleaned) {
-                    ingestOne(this, draft.graphId, triple, draft.rawEventIds, draft.confidence)
+                val triple = CleanTriple(draft.s.trim(), draft.p.trim(), draft.o.trim(), draft.retract)
+                val reason = when {
+                    triple.s.isEmpty() || triple.p.isEmpty() || triple.o.isEmpty() -> "empty field"
+                    triple.p !in graphPredicates(draft.graphId) -> "unknown predicate"
+                    else -> null
                 }
-                if (cleaned.isNotEmpty() && draft.rawEventIds.isNotEmpty()) {
+                if (reason != null) {
+                    errors += IngestError(draft.graphId, draft.s, draft.p, draft.o, reason)
+                    continue
+                }
+                if (triple.retract) {
+                    retractOne(
+                        this,
+                        draft.graphId,
+                        triple,
+                        draft.rawEventIds,
+                        draft.confidence,
+                        invalidAt = draft.invalidAt,
+                    )
+                } else {
+                    ingestOne(
+                        this,
+                        draft.graphId,
+                        triple,
+                        draft.rawEventIds,
+                        draft.confidence,
+                        validAt = draft.validAt,
+                        invalidAt = draft.invalidAt,
+                    )
+                }
+                if (draft.rawEventIds.isNotEmpty()) {
                     markConsumed(this, draft.graphId, draft.rawEventIds)
                 }
             }
         }
+        IngestResult(errors)
     }
 
     override suspend fun query(
@@ -63,6 +91,7 @@ open class SqliteMemoryStore(
         text: String,
         budgetChars: Int,
         principal: String,
+        at: Long,
     ): MemoryHit = lock.withLock {
         requireGraph(graphId)
         val tokens = queryTokens(text)
@@ -71,13 +100,10 @@ open class SqliteMemoryStore(
             val qn = normalizeText(text)
             val nodeIds = matchNodes(this, graphId, tokens, qn)
             val predicateHits = graphPredicates(graphId).filter { pred ->
-                val labels = listOfNotNull(predicateLabel(pred)) + PREDICATE_QUERY_HINTS[pred].orEmpty()
-                labels.any { hint ->
-                    val h = nfkcCompact(hint)
-                    h.isNotEmpty() && h in qn
-                }
+                val label = nfkcCompact(predicateLabel(pred))
+                label.isNotEmpty() && label in qn
             }
-            val edges = loadValidEdges(this, graphId).filter { edge ->
+            val edges = loadValidEdges(this, graphId, at).filter { edge ->
                 scopeAllowed(edge.scope, principal) &&
                     (
                         edge.srcId in nodeIds ||
@@ -105,10 +131,10 @@ open class SqliteMemoryStore(
         db.transaction {
             exec(
                 """
-                UPDATE edge SET valid_to = ?
-                WHERE graph_id = ? AND valid_to IS NULL AND confidence < 0.35 AND updated_at < ?
+                UPDATE edge SET expired_at = ?, updated_at = ?
+                WHERE graph_id = ? AND expired_at IS NULL AND confidence < 0.35 AND updated_at < ?
                 """.trimIndent(),
-                now, graphId, horizon,
+                now, now, graphId, horizon,
             )
         }
     }
@@ -135,9 +161,10 @@ open class SqliteMemoryStore(
         db.transaction {
             exec("DELETE FROM pending_review WHERE edge_id = ?", edgeId)
             if (!accept) {
+                val t = System.currentTimeMillis()
                 exec(
-                    "UPDATE edge SET valid_to = ? WHERE id = ? AND graph_id = ?",
-                    System.currentTimeMillis(), edgeId, graphId,
+                    "UPDATE edge SET expired_at = ?, updated_at = ? WHERE id = ? AND graph_id = ? AND expired_at IS NULL",
+                    t, t, edgeId, graphId,
                 )
             }
         }
@@ -147,7 +174,7 @@ open class SqliteMemoryStore(
         requireGraph(graphId)
         db.transaction {
             val replay = query(
-                "SELECT s, p, o, confidence, raw_event_ids FROM fact_log WHERE graph_id = ? ORDER BY ts",
+                "SELECT s, p, o, confidence, raw_event_ids, retract, ts, valid_at, invalid_at FROM fact_log WHERE graph_id = ? ORDER BY ts",
                 graphId,
             )
             exec("DELETE FROM pending_review WHERE edge_id IN (SELECT id FROM edge WHERE graph_id = ?)", graphId)
@@ -157,14 +184,34 @@ open class SqliteMemoryStore(
             exec("DELETE FROM node WHERE graph_id = ?", graphId)
             ensureUser(this, graphId)
             for (row in replay) {
-                ingestOne(
-                    this,
-                    graphId,
-                    CleanTriple(row.str("s"), row.str("p"), row.str("o")),
-                    decodeIds(row.str("raw_event_ids")),
-                    row.double("confidence"),
-                    log = false,
-                )
+                val triple = CleanTriple(row.str("s"), row.str("p"), row.str("o"), retract = row.int("retract") != 0)
+                val ts = row.long("ts")
+                val validAt = row.long("valid_at").takeIf { it > 0 } ?: ts
+                val invalidAt = row.longOrNull("invalid_at")
+                if (triple.retract) {
+                    retractOne(
+                        this,
+                        graphId,
+                        triple,
+                        decodeIds(row.str("raw_event_ids")),
+                        row.double("confidence"),
+                        log = false,
+                        at = ts,
+                        invalidAt = invalidAt,
+                    )
+                } else {
+                    ingestOne(
+                        this,
+                        graphId,
+                        triple,
+                        decodeIds(row.str("raw_event_ids")),
+                        row.double("confidence"),
+                        log = false,
+                        at = ts,
+                        validAt = validAt,
+                        invalidAt = invalidAt,
+                    )
+                }
             }
         }
     }
@@ -196,11 +243,96 @@ open class SqliteMemoryStore(
         }
     }
 
-    override suspend fun facts(graphId: String): MemoryHit = lock.withLock {
+    override suspend fun facts(
+        graphId: String,
+        at: Long,
+        p: String?,
+        node: String?,
+    ): MemoryHit = lock.withLock {
         requireGraph(graphId)
         db.transaction {
-            val edges = loadValidEdges(this, graphId).sortedByDescending { it.updatedAt }
+            val wantNode = node?.let { normalizeText(it) }?.takeIf { it.isNotEmpty() }
+            val edges = loadValidEdges(this, graphId, at)
+                .filter { edge ->
+                    (p == null || edge.relation == p) &&
+                        (wantNode == null || nameOf(this, edge.srcId) == wantNode || nameOf(this, edge.dstId) == wantNode)
+                }
+                .sortedByDescending { it.updatedAt }
             MemoryHit(edges.map { toFact(this, it) })
+        }
+    }
+
+    override suspend fun recent(graphId: String, since: Long): MemoryHit = lock.withLock {
+        requireGraph(graphId)
+        db.transaction {
+            val edges = txRecentEdges(this, graphId, since)
+            MemoryHit(edges.map { toFact(this, it) })
+        }
+    }
+
+    override suspend fun neighborhood(graphId: String, nodeNames: List<String>): MemoryHit = lock.withLock {
+        requireGraph(graphId)
+        val names = nodeNames.map { normalizeText(it) }.filter { it.isNotEmpty() }.toSet()
+        if (names.isEmpty()) return@withLock MemoryHit()
+        db.transaction {
+            val at = System.currentTimeMillis()
+            val edges = loadValidEdges(this, graphId, at).filter { edge ->
+                nameOf(this, edge.srcId) in names || nameOf(this, edge.dstId) in names
+            }
+            MemoryHit(edges.map { toFact(this, it) })
+        }
+    }
+
+    override suspend fun mergeNodes(graphId: String, keep: String, drop: String) = lock.withLock {
+        requireGraph(graphId)
+        db.transaction {
+            val kn = normalizeText(keep)
+            val dn = normalizeText(drop)
+            if (kn.isEmpty() || dn.isEmpty() || kn == dn) return@transaction
+            val dropId = findNode(this, graphId, dn) ?: return@transaction
+            val keepId = resolveNode(this, graphId, kn)
+            if (keepId == dropId) return@transaction
+            val now = System.currentTimeMillis()
+            val live = loadValidEdges(this, graphId, now).filter { it.srcId == dropId || it.dstId == dropId }
+            for (edge in live) {
+                exec(
+                    "UPDATE edge SET expired_at = ?, updated_at = ? WHERE id = ? AND expired_at IS NULL",
+                    now, now, edge.id,
+                )
+                val newSrc = if (edge.srcId == dropId) keepId else edge.srcId
+                val newDst = if (edge.dstId == dropId) keepId else edge.dstId
+                if (newSrc == newDst) continue
+                val exists = query(
+                    """
+                    SELECT id FROM edge
+                    WHERE graph_id = ? AND src = ? AND dst = ? AND relation = ? AND $CURRENT_EDGE
+                    """.trimIndent(),
+                    graphId, newSrc, newDst, edge.relation, now, now, now, now,
+                ).isNotEmpty()
+                if (exists) continue
+                val edgeId = newId()
+                exec(
+                    """
+                    INSERT INTO edge(id, graph_id, src, dst, relation, confidence, created_at, expired_at, valid_at, invalid_at, updated_at, scope, provenance)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+                    """.trimIndent(),
+                    edgeId, graphId, newSrc, newDst, edge.relation, edge.confidence,
+                    now, edge.validAt, edge.invalidAt, now, edge.scope, encodeIds(edge.provenance),
+                )
+                exec(
+                    """
+                    INSERT INTO fact_log(id, graph_id, ts, s, p, o, confidence, raw_event_ids, retract, valid_at, invalid_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    """.trimIndent(),
+                    newId(), graphId, now, nameOf(this, newSrc), edge.relation, nameOf(this, newDst),
+                    edge.confidence, encodeIds(edge.provenance), edge.validAt, edge.invalidAt,
+                )
+            }
+            exec(
+                "INSERT OR REPLACE INTO node_alias(graph_id, alias, node_id) VALUES (?, ?, ?)",
+                graphId, dn, keepId,
+            )
+            refreshFts(this, graphId, keepId, nameOf(this, keepId))
         }
     }
 
@@ -216,10 +348,11 @@ open class SqliteMemoryStore(
                     },
                     edges = loadAllEdges(this),
                     raw = query("SELECT id, graph_id, ts, session_id, role, text_ref, source, consumed, scope FROM raw_event").map(::toRaw),
-                    factLog = query("SELECT id, graph_id, ts, s, p, o, confidence, raw_event_ids FROM fact_log").map {
+                    factLog = query("SELECT id, graph_id, ts, s, p, o, confidence, raw_event_ids, retract, valid_at, invalid_at FROM fact_log").map {
                         FactLogRec(
                             it.str("id"), it.str("graph_id"), it.long("ts"), it.str("s"), it.str("p"), it.str("o"),
-                            it.double("confidence"), decodeIds(it.str("raw_event_ids")),
+                            it.double("confidence"), decodeIds(it.str("raw_event_ids")), it.int("retract") != 0,
+                            it.long("valid_at"), it.longOrNull("invalid_at"),
                         )
                     },
                     reviews = query("SELECT edge_id, reason, confidence, s, p, o FROM pending_review").map {
@@ -255,11 +388,12 @@ open class SqliteMemoryStore(
             for (edge in snap.edges) {
                 exec(
                     """
-                    INSERT INTO edge(id, graph_id, src, dst, relation, confidence, valid_from, valid_to, updated_at, scope, provenance)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO edge(id, graph_id, src, dst, relation, confidence, created_at, expired_at, valid_at, invalid_at, updated_at, scope, provenance)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """.trimIndent(),
                     edge.id, edge.graphId, edge.srcId, edge.dstId, edge.relation, edge.confidence,
-                    edge.validFrom, edge.validTo, edge.updatedAt, edge.scope, encodeIds(edge.provenance),
+                    edge.createdAt, edge.expiredAt, edge.validAt, edge.invalidAt, edge.updatedAt, edge.scope,
+                    encodeIds(edge.provenance),
                 )
             }
             for (event in snap.raw) {
@@ -276,10 +410,11 @@ open class SqliteMemoryStore(
             for (row in snap.factLog) {
                 exec(
                     """
-                    INSERT INTO fact_log(id, graph_id, ts, s, p, o, confidence, raw_event_ids)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO fact_log(id, graph_id, ts, s, p, o, confidence, raw_event_ids, retract, valid_at, invalid_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """.trimIndent(),
                     row.id, row.graphId, row.ts, row.s, row.p, row.o, row.confidence, encodeIds(row.rawEventIds),
+                    if (row.retract) 1 else 0, row.validAt, row.invalidAt,
                 )
             }
             for (review in snap.reviews) {
@@ -301,30 +436,35 @@ open class SqliteMemoryStore(
         rawEventIds: List<String>,
         confidence: Double,
         log: Boolean = true,
+        at: Long = System.currentTimeMillis(),
+        validAt: Long? = null,
+        invalidAt: Long? = null,
     ) {
-        val srcId = resolveNode(tx, graphId, triple.s, hint = triple.p)
-        val dstId = resolveNode(tx, graphId, triple.o, hint = triple.p, asObject = true)
-        val now = System.currentTimeMillis()
+        val srcId = resolveNode(tx, graphId, triple.s)
+        val dstId = resolveNode(tx, graphId, triple.o)
+        val worldStart = validAt ?: at
         var superseded = false
         if (triple.p in graphFunctionalPredicates(graphId)) {
             val old = tx.query(
                 """
                 SELECT id FROM edge
-                WHERE graph_id = ? AND src = ? AND relation = ? AND valid_to IS NULL AND dst != ?
+                WHERE graph_id = ? AND src = ? AND relation = ? AND dst != ?
+                  AND $CURRENT_EDGE
                 """.trimIndent(),
-                graphId, srcId, triple.p, dstId,
+                graphId, srcId, triple.p, dstId, at, at, at, at,
             )
             for (row in old) {
-                tx.exec("UPDATE edge SET valid_to = ? WHERE id = ?", now, row.str("id"))
+                archiveWorld(tx, at, worldStart, row.str("id"))
                 superseded = true
             }
         }
         val existing = tx.query(
             """
             SELECT id, confidence, provenance FROM edge
-            WHERE graph_id = ? AND src = ? AND dst = ? AND relation = ? AND valid_to IS NULL
+            WHERE graph_id = ? AND src = ? AND dst = ? AND relation = ?
+              AND $CURRENT_EDGE
             """.trimIndent(),
-            graphId, srcId, dstId, triple.p,
+            graphId, srcId, dstId, triple.p, at, at, at, at,
         ).firstOrNull()
         val edgeId: String
         if (existing != null) {
@@ -332,36 +472,27 @@ open class SqliteMemoryStore(
             val provenance = (decodeIds(existing.str("provenance")) + rawEventIds).distinct()
             tx.exec(
                 "UPDATE edge SET confidence = ?, updated_at = ?, provenance = ? WHERE id = ?",
-                maxOf(existing.double("confidence"), confidence), now, encodeIds(provenance), edgeId,
+                maxOf(existing.double("confidence"), confidence), at, encodeIds(provenance), edgeId,
             )
         } else {
             edgeId = newId()
             tx.exec(
                 """
-                INSERT INTO edge(id, graph_id, src, dst, relation, confidence, valid_from, valid_to, updated_at, scope, provenance)
-                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+                INSERT INTO edge(id, graph_id, src, dst, relation, confidence, created_at, expired_at, valid_at, invalid_at, updated_at, scope, provenance)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
                 """.trimIndent(),
-                edgeId, graphId, srcId, dstId, triple.p, confidence, now, now, defaultScope(triple.p), encodeIds(rawEventIds),
-            )
-        }
-        if (triple.p == "allergic_to") {
-            tx.exec(
-                """
-                UPDATE edge SET valid_to = ?
-                WHERE graph_id = ? AND src = ? AND valid_to IS NULL
-                  AND relation IN ('likes', 'prefers', 'dislikes')
-                  AND dst IN (SELECT id FROM node WHERE canonical_name = ?)
-                """.trimIndent(),
-                now, graphId, srcId, triple.o,
+                edgeId, graphId, srcId, dstId, triple.p, confidence, at, worldStart, invalidAt, at,
+                defaultScope(triple.p), encodeIds(rawEventIds),
             )
         }
         if (log) {
             tx.exec(
                 """
-                INSERT INTO fact_log(id, graph_id, ts, s, p, o, confidence, raw_event_ids)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO fact_log(id, graph_id, ts, s, p, o, confidence, raw_event_ids, retract, valid_at, invalid_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                 """.trimIndent(),
-                newId(), graphId, now, triple.s, triple.p, triple.o, confidence, encodeIds(rawEventIds),
+                newId(), graphId, at, triple.s, triple.p, triple.o, confidence, encodeIds(rawEventIds),
+                worldStart, invalidAt,
             )
         }
         if (superseded) {
@@ -373,12 +504,60 @@ open class SqliteMemoryStore(
         }
     }
 
+    private fun retractOne(
+        tx: MemoryTx,
+        graphId: String,
+        triple: CleanTriple,
+        rawEventIds: List<String>,
+        confidence: Double,
+        log: Boolean = true,
+        at: Long = System.currentTimeMillis(),
+        invalidAt: Long? = null,
+    ) {
+        val worldEnd = invalidAt ?: at
+        val srcId = tx.query(
+            "SELECT id FROM node WHERE graph_id = ? AND canonical_name = ?",
+            graphId, normalizeText(triple.s),
+        ).firstOrNull()?.str("id")
+        val dstId = tx.query(
+            "SELECT id FROM node WHERE graph_id = ? AND canonical_name = ?",
+            graphId, normalizeText(triple.o),
+        ).firstOrNull()?.str("id")
+        if (srcId != null && dstId != null) {
+            tx.query(
+                """
+                SELECT id FROM edge
+                WHERE graph_id = ? AND src = ? AND dst = ? AND relation = ? AND expired_at IS NULL
+                """.trimIndent(),
+                graphId, srcId, dstId, triple.p,
+            ).forEach { archiveWorld(tx, at, worldEnd, it.str("id")) }
+        }
+        if (log) {
+            tx.exec(
+                """
+                INSERT INTO fact_log(id, graph_id, ts, s, p, o, confidence, raw_event_ids, retract, valid_at, invalid_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                """.trimIndent(),
+                newId(), graphId, at, triple.s, triple.p, triple.o, confidence, encodeIds(rawEventIds),
+                at, worldEnd,
+            )
+        }
+    }
+
+    private fun archiveWorld(tx: MemoryTx, now: Long, invalidAt: Long, edgeId: String) {
+        tx.exec(
+            """
+            UPDATE edge SET expired_at = ?, invalid_at = COALESCE(invalid_at, ?), updated_at = ?
+            WHERE id = ? AND expired_at IS NULL
+            """.trimIndent(),
+            now, invalidAt, now, edgeId,
+        )
+    }
+
     private fun resolveNode(
         tx: MemoryTx,
         graphId: String,
         name: String,
-        hint: String,
-        asObject: Boolean = false,
     ): String {
         val n = normalizeText(name)
         if (n == "用户" || n == "user") return ensureUser(tx, graphId)
@@ -386,33 +565,19 @@ open class SqliteMemoryStore(
             .firstOrNull()?.let { return it.str("node_id") }
         tx.query("SELECT id FROM node WHERE graph_id = ? AND canonical_name = ?", graphId, n)
             .firstOrNull()?.let { return it.str("id") }
-        if (!isNovelGraph(graphId)) {
-            val hits = tx.query(
-                "SELECT id, canonical_name FROM node WHERE graph_id = ? AND id != ?",
-                graphId, userId(graphId),
-            ).map { it.str("id") to it.str("canonical_name") }
-                .filter { (_, canonical) -> n in canonical || (canonical.length >= 2 && canonical in n) }
-            if (hits.size == 1) {
-                val id = hits[0].first
-                tx.exec("INSERT OR REPLACE INTO node_alias(graph_id, alias, node_id) VALUES (?, ?, ?)", graphId, n, id)
-                refreshFts(tx, graphId, id, hits[0].second)
-                return id
-            }
-        }
         val id = newId()
-        val type = when {
-            n in PETS || hint == "has_pet" -> "pet"
-            hint in setOf("related_to", "status", "is_a") && !asObject -> "person"
-            hint == "related_to" && asObject -> "person"
-            hint == "has_item" && asObject -> "thing"
-            hint in setOf("lives_in", "located_in", "born_in", "work_location") && asObject -> "place"
-            hint in setOf("works_at", "alumni_of", "member_of") && asObject -> "org"
-            else -> "other"
-        }
+        val type = "other"
         tx.exec("INSERT INTO node(id, graph_id, type, canonical_name) VALUES (?, ?, ?, ?)", id, graphId, type, n)
         tx.exec("INSERT OR REPLACE INTO node_alias(graph_id, alias, node_id) VALUES (?, ?, ?)", graphId, n, id)
         refreshFts(tx, graphId, id, n)
         return id
+    }
+
+    private fun findNode(tx: MemoryTx, graphId: String, name: String): String? {
+        tx.query("SELECT node_id FROM node_alias WHERE graph_id = ? AND alias = ?", graphId, name)
+            .firstOrNull()?.let { return it.str("node_id") }
+        return tx.query("SELECT id FROM node WHERE graph_id = ? AND canonical_name = ?", graphId, name)
+            .firstOrNull()?.str("id")
     }
 
     private fun ensureUser(tx: MemoryTx, graphId: String): String {
@@ -456,20 +621,30 @@ open class SqliteMemoryStore(
         )
     }
 
-    private fun loadValidEdges(tx: MemoryTx, graphId: String): List<EdgeRec> =
+    private fun loadValidEdges(tx: MemoryTx, graphId: String, at: Long): List<EdgeRec> =
         tx.query(
             """
-            SELECT id, graph_id, src, dst, relation, confidence, valid_from, valid_to, updated_at, scope, provenance
-            FROM edge WHERE graph_id = ? AND valid_to IS NULL
+            SELECT $EDGE_COLS
+            FROM edge WHERE graph_id = ? AND $CURRENT_EDGE
             """.trimIndent(),
-            graphId,
+            graphId, at, at, at, at,
+        ).map(::toEdge)
+
+    private fun txRecentEdges(tx: MemoryTx, graphId: String, since: Long): List<EdgeRec> =
+        tx.query(
+            """
+            SELECT $EDGE_COLS
+            FROM edge
+            WHERE graph_id = ?
+              AND (created_at >= ? OR updated_at >= ? OR expired_at >= ?)
+            """.trimIndent(),
+            graphId, since, since, since,
         ).map(::toEdge)
 
     private fun loadAllEdges(tx: MemoryTx): List<EdgeRec> =
         tx.query(
             """
-            SELECT id, graph_id, src, dst, relation, confidence, valid_from, valid_to, updated_at, scope, provenance
-            FROM edge
+            SELECT $EDGE_COLS FROM edge
             """.trimIndent(),
         ).map(::toEdge)
 
@@ -480,8 +655,10 @@ open class SqliteMemoryStore(
         dstId = row.str("dst"),
         relation = row.str("relation"),
         confidence = row.double("confidence"),
-        validFrom = row.long("valid_from"),
-        validTo = row.longOrNull("valid_to"),
+        createdAt = row.long("created_at"),
+        expiredAt = row.longOrNull("expired_at"),
+        validAt = row.long("valid_at"),
+        invalidAt = row.longOrNull("invalid_at"),
         updatedAt = row.long("updated_at"),
         scope = row.str("scope"),
         provenance = decodeIds(row.str("provenance")),
@@ -534,6 +711,10 @@ open class SqliteMemoryStore(
 
     private companion object {
         const val THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000
+        const val EDGE_COLS =
+            "id, graph_id, src, dst, relation, confidence, created_at, expired_at, valid_at, invalid_at, updated_at, scope, provenance"
+        const val CURRENT_EDGE =
+            "created_at <= ? AND (expired_at IS NULL OR expired_at > ?) AND valid_at <= ? AND (invalid_at IS NULL OR invalid_at > ?)"
         val SNAPSHOT_JSON = Json {
             encodeDefaults = true
             ignoreUnknownKeys = true

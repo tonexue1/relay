@@ -20,15 +20,13 @@ import relay.agent.AgentException
 import relay.demo.BuildConfig
 import relay.llm.RelayLlmException
 import relay.llm.model.ChatChunk
-import relay.llm.model.Role
 import relay.llm.provider.DeepSeek
-import relay.memory.AssistantPlay
-import relay.memory.CloudTripleExtractor
+import relay.memory.extract.remembering
 import relay.memory.FileArtifactStore
 import relay.memory.GRAPH_ASSISTANT
-import relay.memory.SqliteMemoryStore
 import relay.memory.RawTurn
-import relay.memory.remembering
+import relay.memory.SqliteMemoryStore
+import relay.memory.recallPad
 
 data class AssistantLine(
     val role: String,
@@ -37,17 +35,18 @@ data class AssistantLine(
 
 data class AssistantUiState(
     val apiKey: String = BuildConfig.DEEPSEEK_API_KEY,
-    val prompt: String = SAMPLE_PROMPTS.first().second,
+    val prompt: String = AssistantCorpus.probes.first().prompt,
     val running: Boolean = false,
-    val organizing: Boolean = false,
+    val seeding: Boolean = false,
     val output: String = "",
     val error: String? = null,
     val lines: List<AssistantLine> = emptyList(),
     val facts: String = "",
-    val unconsumed: Int = 0,
-    val cloudOk: Boolean = false,
+    val factCount: Int = 0,
+    val recallPad: String = "",
+    val seedNote: String = "",
 ) {
-    val canSend: Boolean get() = !running && prompt.isNotBlank() && apiKey.isNotBlank()
+    val canSend: Boolean get() = !running && !seeding && prompt.isNotBlank() && apiKey.isNotBlank()
 }
 
 class AssistantViewModel(application: Application) : AndroidViewModel(application) {
@@ -69,7 +68,10 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     private var inFlight: Job? = null
 
     init {
-        viewModelScope.launch { refreshFacts() }
+        viewModelScope.launch {
+            refreshFacts()
+            refreshPad(_uiState.value.prompt)
+        }
     }
 
     fun onApiKeyChange(value: String) {
@@ -77,20 +79,37 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(apiKey = value) }
     }
 
-    fun onPromptChange(value: String) = _uiState.update { it.copy(prompt = value) }
+    fun onPromptChange(value: String) {
+        _uiState.update { it.copy(prompt = value) }
+        viewModelScope.launch { refreshPad(value) }
+    }
 
-    fun onCloudOkChange(value: Boolean) = _uiState.update { it.copy(cloudOk = value) }
+    fun seedWave(index: Int) {
+        val wave = AssistantCorpus.waves.getOrNull(index) ?: return
+        if (_uiState.value.seeding || _uiState.value.running) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(seeding = true, error = null) }
+            try {
+                store.ingest(wave.drafts)
+                refreshFacts()
+                refreshPad(_uiState.value.prompt)
+                val count = _uiState.value.factCount
+                _uiState.update {
+                    it.copy(seedNote = "${wave.title} 写入 ${wave.drafts.size} 条，活图现在 ${count} 条")
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "入库失败: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(seeding = false) }
+            }
+        }
+    }
 
     fun send() {
         val state = _uiState.value
         if (!state.canSend) return
         val input = state.prompt.trim()
         collect(input)
-    }
-
-    fun organize() {
-        if (_uiState.value.organizing) return
-        viewModelScope.launch { runOrganize(fromUser = true) }
     }
 
     fun resetChat() {
@@ -118,6 +137,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         }
         inFlight = viewModelScope.launch {
             try {
+                refreshPad(input)
                 store.capture(RawTurn(GRAPH_ASSISTANT, role = "user", text = input))
                 var assistant = ""
                 ensureAgent(_uiState.value).prompt(input).collect { event ->
@@ -138,7 +158,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                         it.copy(lines = it.lines + AssistantLine("assistant", assistant), output = "")
                     }
                 }
-                runOrganize(fromUser = false)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: AgentException) {
@@ -152,50 +171,14 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    private suspend fun runOrganize(fromUser: Boolean) {
-        if (!_uiState.value.cloudOk) {
-            if (fromUser) {
-                _uiState.update { it.copy(error = "未允许上云，原文仍留在本机") }
-            }
-            refreshFacts()
-            return
-        }
-        val waiting = store.unconsumed(GRAPH_ASSISTANT)
-        if (waiting.isEmpty()) {
-            refreshFacts()
-            return
-        }
-        store.markScope(GRAPH_ASSISTANT, waiting.map { it.id }, "cloud_ok")
-        val pending = store.unconsumed(GRAPH_ASSISTANT, principal = "extractor")
-        if (pending.isEmpty()) {
-            refreshFacts()
-            return
-        }
-        val key = _uiState.value.apiKey
-        if (key.isBlank()) return
-        _uiState.update { it.copy(organizing = true, error = null) }
-        try {
-            val extractor = CloudTripleExtractor(
-                DeepSeek.provider(apiKey = key, httpClient = httpClient),
-            )
-            val drafts = extractor.extract(
-                GRAPH_ASSISTANT,
-                CloudTripleExtractor.formatTurns(pending),
-                pending.map { it.id },
-            )
-            if (drafts.isNotEmpty()) store.ingest(drafts)
-        } catch (e: RelayLlmException) {
-            _uiState.update { it.copy(error = "整理失败: ${e.message}") }
-        } finally {
-            _uiState.update { it.copy(organizing = false) }
-            refreshFacts()
-        }
+    private suspend fun refreshFacts() {
+        val hit = store.facts(GRAPH_ASSISTANT)
+        _uiState.update { it.copy(facts = hit.render(), factCount = hit.facts.size) }
     }
 
-    private suspend fun refreshFacts() {
-        val facts = store.facts(GRAPH_ASSISTANT).render()
-        val pending = store.unconsumed(GRAPH_ASSISTANT).size
-        _uiState.update { it.copy(facts = facts, unconsumed = pending) }
+    private suspend fun refreshPad(text: String) {
+        val pad = store.recallPad(GRAPH_ASSISTANT, text)
+        _uiState.update { it.copy(recallPad = pad) }
     }
 
     private fun ensureAgent(state: AssistantUiState): Agent {
@@ -231,11 +214,3 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 private const val ASSISTANT_SYSTEM =
     "你是手机上的个人助理。根据已记住的事实回答，简短直接。" +
         "事实与问题冲突时以事实为准。不知道就说不知道。用中文。"
-
-val SAMPLE_PROMPTS: List<Pair<String, String>> = listOf(
-    "过敏" to "记一下，我花生过敏，火锅蘸料也别推荐花生酱。",
-    "火锅" to "今晚想吃火锅，有什么别踩的雷？",
-    "作业" to "我作业没做完。",
-    "工龄" to "我工作两年了。",
-    "话剧" to AssistantPlay.SAMPLE_PROMPT,
-)
