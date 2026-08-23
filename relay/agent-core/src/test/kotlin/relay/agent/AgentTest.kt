@@ -345,4 +345,80 @@ class AgentTest {
         assertEquals(4, agent.state.messages.size)
         assertEquals("keep", agent.state.messages.last { it.role == Role.USER }.content)
     }
+
+    @Test
+    fun augmenterPadsRequestWithoutWritingTranscript() = runTest {
+        val provider = ScriptedProvider(listOf { ScriptedProvider.text("ok") })
+        val agent = Agent(
+            provider = provider,
+            config = AgentConfig(model = "fake-model", systemPrompt = "sys"),
+            contextAugmenters = listOf(
+                ContextAugmenter { ContextAugmentation(listOf(Message.user("已知事实:\n- 用户 过敏 花生"))) },
+            ),
+        )
+
+        agent.prompt("今晚能吃花生吗").toList()
+
+        val sent = provider.receivedRequests.single().messages
+        assertEquals("sys", sent.first { it.role == Role.SYSTEM }.content)
+        assertTrue(sent.any { it.content == "已知事实:\n- 用户 过敏 花生" })
+        assertEquals(listOf(Role.USER, Role.ASSISTANT), agent.state.messages.map { it.role })
+        assertEquals("今晚能吃花生吗", agent.state.messages.first().content)
+        assertFalse(agent.state.messages.any { it.content.orEmpty().contains("已知事实") })
+    }
+
+    @Test
+    fun augmenterTokensAreReservedSoTranscriptStillTrims() = runTest {
+        val provider = ScriptedProvider(
+            scripts = listOf { ScriptedProvider.text("ok") },
+            info = ScriptedProvider.toolsInfo(contextWindow = 40),
+        )
+        val pad = "MEM-" + "x".repeat(40)
+        val agent = Agent(
+            provider = provider,
+            config = AgentConfig(model = "fake-model", maxTokens = 4),
+            contextAugmenters = listOf(
+                ContextAugmenter { ContextAugmentation(listOf(Message.user(pad))) },
+            ),
+        )
+        agent.state.messages = listOf(
+            Message.user("alpha-".repeat(20)),
+            Message.assistant("beta-".repeat(20)),
+        )
+
+        agent.prompt("keep").toList()
+
+        val sent = provider.receivedRequests.single().messages.filter { it.role != Role.SYSTEM }
+        assertTrue(sent.any { it.content == pad })
+        assertTrue(sent.any { it.content == "keep" })
+        assertTrue(sent.none { it.content == "alpha-".repeat(20) })
+        assertEquals("keep", agent.state.messages.last { it.role == Role.USER }.content)
+        assertFalse(agent.state.messages.any { it.content == pad })
+    }
+
+    @Test
+    fun augmenterRunsOnEveryProviderCall() = runTest {
+        val seen = mutableListOf<Int>()
+        val provider = ScriptedProvider(
+            listOf(
+                { ScriptedProvider.tools(ToolCall("1", "echo", "{}")) },
+                { ScriptedProvider.text("after") },
+            ),
+        )
+        val agent = Agent(
+            provider = provider,
+            config = AgentConfig(model = "fake-model"),
+            tools = listOf(FunTool("echo") { "ok" }),
+            contextAugmenters = listOf(
+                ContextAugmenter {
+                    seen += it.size
+                    ContextAugmentation.Empty
+                },
+            ),
+        )
+
+        agent.prompt("go").toList()
+
+        assertEquals(listOf(1, 3), seen)
+    }
 }

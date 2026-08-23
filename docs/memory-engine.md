@@ -22,13 +22,14 @@ mergeNodes 系统过期 drop 边，缺则在 keep 上插入
 forget   剪边、不剪日志
 ```
 
-存储很无聊:**SQLite + FTS5 + filesDir**。JVM 单测和 playground 共用同一套 schema。新意在入库纪律。
+存储:**Room 3 + bundled SQLite（`@Fts5`）+ filesDir 附件**。`relay/memory` 是 Android library（图引擎 + 云端抽取 / dream）；单测走 Robolectric。新意在入库纪律。
 
-核心一句:**`raw_event` = 对话真相(只追加);`fact_log` = 已采纳事实(只追加);`node/edge` = 可丢弃的物化视图。**
+核心一句:**`raw_event` = 对话真相；`claim_log` = 开放原子记忆；`fact_log` = 已采纳闭集事实；`node/edge` = 可丢弃的物化视图。**
 
-三层日志解决三件事:
+四层账解决四件事:
 
 - 聊天不卡:只 `capture`,不抽。
+- 谓语接不住的项目/架构事实仍进 Claim，不因闭集丢失。
 - 可重抽:抽错了 / 换抽取模型,拿 `raw_event` 再送云端,`DROP` 图重 `ingest`。
 - 可离线重建:图坏了,不连网,重放 `fact_log` 就能长回同样的图。
 
@@ -48,21 +49,21 @@ forget   剪边、不剪日志
 ## 1. 边界
 
 ```
-  Agent 每轮结束
-       │ capture(turn)          ← 无模型,毫秒
+  进模型前
+       │ recalling → ContextAugmenter     ← 无模型,有字数预算
        ▼
-  raw_event(consumed=false)
+  Agent 一轮
+       │ capture(turn)                    ← 无模型,毫秒
+       ▼
+  raw_event(consumed=false, session_id)
        │
-       │ 慢路径(用户点整理 / WorkManager)
+       │ Episode: 4 回合 / 60s / flush   ← host 调度
        ▼
-  CloudExtract(片段) → TripleDraft[]   ← 唯一碰 LLM 的地方,在引擎外
-       │ ingest(drafts)
-       ▼
-  按字写入 → 对节点 → upsert 边 → provenance → FTS
+  CloudExtract → claim + ingest → consume ← 解析失败/截断不消费
        │
-       │ 下次 prompt 前
+       │ consolidate(graphId)             ← 空闲 / 阈值
        ▼
-  query(user text) → bullets → transformContext  ← 无模型
+  夜间 Agent: recent / neighborhood / merge
 ```
 
 引擎**拒绝**做的:
@@ -85,7 +86,7 @@ graph_id = "novel:{bookId}"      一本书一张图,50 章共用,换书换 id
 
 ### 助手
 
-谓语用 §4.0 那 30 条。召回 = FTS 节点 + 一跳边,垫进 `transformContext`。敏感边默认 `scope=private`,上云抽取另开 `cloud_ok`。
+谓语用 §4.0 那 30 条。召回 = FTS 节点 + 一跳边,垫进 `transformContext`。抽取由调用方触发(playground 的「抽取」按钮),未消费原文整批上云。
 
 ### 小说(~50 章)
 
@@ -142,11 +143,11 @@ graph_id = "novel:{bookId}"      一本书一张图,50 章共用,换书换 id
 
 调用方(WorkManager / 一次「整理」)负责:
 
-1. `SELECT * FROM raw_event WHERE consumed=0`。上云抽取用 `principal=extractor`,只看见 `cloud_ok`;默认 capture 是 `private`,playground 要先「允许上云」再 `markScope`。
-2. 拼片段(可按 session,上限字符)送到云 Extractor
-3. 得到 `TripleDraft(s, p, o, raw_event_ids, confidence?)`
-4. `store.ingest(drafts)` —— **此后全是 SQL**
-5. 标 `consumed=1`
+1. `LearnBatchPlanner` 按 `graph_id + session_id`、回合/字符上限切 Episode，并带上一批末尾 2 回合作上下文。
+2. 先写 `extraction_run(RUNNING)`，再把 Episode 送云 Extractor。
+3. 得到 `ClaimDraft[] + TripleDraft[]`；能忠实进闭集的写 triple，复杂事实写 claim。
+4. 同一事务写 `claim_log`、`fact_log/node/edge`，并只标本批新事件 `consumed=1`。
+5. 保存 finish reason、原始响应和错误。合法纯闲聊空稿消费；解析失败、截断、拒答不消费。
 
 `ingest` 内部没有网络。网络失败 = 不 ingest、不标 consumed,下次重试。
 
@@ -158,11 +159,19 @@ graph_id = "novel:{bookId}"      一本书一张图,50 章共用,换书换 id
 
 ```sql
 raw_event(
-  id, graph_id, ts, session_id, role, text_ref, source, consumed, scope
+  id, graph_id, ts, session_id, role, text_ref, source, consumed
 )
 
 fact_log(
   id, graph_id, ts, s, p, o, confidence, raw_event_ids, retract, valid_at, invalid_at
+)
+claim_log(
+  id, graph_id, session_id, run_id, subject, text,
+  confidence, raw_event_ids, created_at
+)
+extraction_run(
+  id, graph_id, session_id, status, event_ids, context_event_ids,
+  started_at, finished_at, response_ref, error
 )
 
 node(
@@ -172,7 +181,7 @@ node(
 node_alias(graph_id, node_id, alias)
 edge(
   id, graph_id, src, dst, relation, confidence,
-  created_at, expired_at, valid_at, invalid_at, updated_at, scope
+  created_at, expired_at, valid_at, invalid_at, updated_at
 )
 provenance(edge_id, raw_event_id)
 
@@ -180,6 +189,8 @@ pending_review(edge_id, reason, confidence)
 
 CREATE VIRTUAL TABLE node_fts
   USING fts5(canonical_name, summary, content='node');
+CREATE VIRTUAL TABLE claim_fts
+  USING fts5(subject, text);
 ```
 
 TODO: `relation(graph_id, p, label_zh, functional, scope, …)` 单独一张表登记边类型；词表从代码迁进去。`ingest` 仍拒未登记 `p`；新增用 `defineRelation`，不让抽取 INSERT。关系不当节点存。
@@ -200,7 +211,7 @@ created_at <= at AND (expired_at IS NULL OR expired_at > at)
 AND valid_at <= at AND (invalid_at IS NULL OR invalid_at > at)
 ```
 
-Agent 可在 `TripleDraft.validAt` / `invalidAt` 填世界时间;不填则 `valid_at = created_at`。schema version 4,Android 升版本会 drop 重建。
+Agent 可在 `TripleDraft.validAt` / `invalidAt` 填世界时间;不填则 `valid_at = created_at`。schema version 5,Android 升版本会 drop 重建。
 
 ---
 
@@ -208,7 +219,7 @@ Agent 可在 `TripleDraft.validAt` / `invalidAt` 填世界时间;不填则 `vali
 
 ### 4.0 谓语闭集
 
-词表以本表、`relay/memory-api` 的 `PREDICATES`、以及回归话剧 `relay/memory-extract` 的 `AssistantPlay` 为准。新口语先加进话剧和 `PlayEvolutionTest`，再决定要不要加谓语。
+词表以本表、`relay/memory` 的 `PREDICATES`、以及回归话剧 `AssistantPlay` 为准。新口语先加进话剧和 `PlayEvolutionTest`，再决定要不要加谓语。
 
 | p | 中文 | 基数 |
 |---|---|---|
@@ -242,6 +253,10 @@ Agent 可在 `TripleDraft.validAt` / `invalidAt` 填世界时间;不填则 `vali
 | `has_task` | 待办 | 集合 |
 | `work_years` | 工龄 | 功能 |
 | `located_in` | 位于 | 集合 |
+| `worked_on` | 参与过 | 集合 |
+| `has_component` | 包含组件 | 集合 |
+| `uses_technology` | 使用技术 | 集合 |
+| `target_role` | 求职方向 | 集合 |
 
 功能边:同一 `src+p` 来了不同 `o` → 旧边打 `expired_at`+`invalid_at`,新边 supersede。集合边可并存。`family_of` 仅在说不清亲疏时用;能分清则用 `child_of` / `parent_of` / `spouse_of` / `sibling_of`。
 
@@ -300,9 +315,8 @@ ingest 一条边之后跑规则,不跑模型:
 ## 5. 接口(纯 Kotlin,无 Provider)
 
 ```
-relay/memory-api       MemoryStore / SqliteMemoryStore(SQLite + FTS5)。没有 LLM。
-relay/memory-extract   云端抽取插件(Provider)和 Agent 垫事实。图不在这里。
-samples/playground     同一套 schema,bundled SQLite 落 filesDir
+relay/memory           图引擎（Room + FTS5）+ MemoryRuntime（recall / learn / consolidate）。
+samples/playground     同一套 Room 库，bundled SQLite 落 getDatabasePath
 ```
 
 ```kotlin
@@ -313,7 +327,6 @@ interface MemoryStore {
         graphId: String,
         text: String,
         budgetChars: Int = 2000,
-        principal: String = "user",
         at: Long = ...,
     ): MemoryHit
     suspend fun facts(graphId: String, at: Long = ...): MemoryHit
@@ -334,57 +347,33 @@ data class TripleDraft(
 )
 ```
 
-`graphId` 是硬 ACL 的第一闸。FTS 命中后回表读边,`WHERE graph_id = ?`;跨图 ID 当未命中。`principal` 第二闸(助手上云抽取 / 以后家庭共享);小说 day 1 只有 `author`。
+`graphId` 是硬 ACL。FTS 命中后回表读边,`WHERE graph_id = ?`;跨图 ID 当未命中。
 
-### 5.1 挂到 Agent(不改 agent-core)
+### 5.1 挂到 Agent
 
-`Agent` 不接收 `MemoryStore`。挂点在 `relay/memory-extract` 的 `remembering()`,和 GroupChat 垫 Scene 的方式一样。
+`Agent` 不接收 `MemoryStore`。召回是 `ContextAugmenter`，不是 `transformContext`。后者只投影正常 transcript；窗口裁剪始终由 Agent 在 augmenter 预留 token 之后执行。
 
-**坑:** `Agent.withSystem` 会丢掉 `transformContext` 产出的所有 `Role.SYSTEM`,只保留 `state.systemPrompt`。事实**不能**做成 system 消息。产品路径学 `projectIntoContext`:垫一条**不写回 transcript** 的 `Message.user`。
-
-读(每次 LLM 调用前,含 tool 循环):
+**坑:** `Agent.withSystem` 会丢掉请求里的 `Role.SYSTEM`,只保留 `state.systemPrompt`。事实垫成临时 user 消息，不写回 transcript。
 
 ```kotlin
-fun MemoryStore.remembering(
-    graphId: String,
-    trim: suspend (List<Message>) -> List<Message>,
-    pin: String = "",           // 小说: logline+本章目标; 助手可空
-): suspend (List<Message>) -> List<Message> = { msgs ->
-    val q = msgs.lastOrNull { it.role == Role.USER }?.content.orEmpty()
-    val bullets = query(graphId, q).render()
-    val prefix = buildString {
-        if (pin.isNotBlank()) append(pin).append('\n')
-        if (bullets.isNotBlank()) append("已知事实:\n").append(bullets)
-    }
-    val injected = if (prefix.isBlank()) emptyList() else listOf(Message.user(prefix))
-    injected + trim(msgs)
-}
+val memory = MemoryRuntime(store, CloudTripleExtractor(provider), AgentConsolidator(provider, store))
 
 val agent = Agent(
-    provider, config, tools,
-    transformContext = store.remembering("assistant", WindowTrim(...)),
+    provider, config,
+    tools = memory.dayTools(graphId),
+    contextAugmenters = listOf(memory.recalling(graphId)),
 )
+
+store.capture(RawTurn(graphId, "user", input, sessionId))
+val reply = agent.run(input).text
+store.capture(RawTurn(graphId, "assistant", reply.orEmpty(), sessionId))
+// host: 4 回合 / 60s idle / reset-background flush
+memory.learn(graphId, sessionId)
+// 空闲或阈值：
+memory.consolidate(graphId)
 ```
 
-写(Agent 没有 after-turn 回调,包一层 `prompt`):
-
-```kotlin
-fun Agent.promptAndCapture(store: MemoryStore, graphId: String, input: String) = flow {
-    store.capture(RawTurn(graphId, role = "user", text = input))
-    var assistant = ""
-    prompt(input).collect { event ->
-        emit(event)
-        if (event is AgentEvent.MessageEnd && event.message.role == Role.ASSISTANT) {
-            assistant = event.message.content.orEmpty()
-        }
-    }
-    if (assistant.isNotBlank()) {
-        store.capture(RawTurn(graphId, role = "assistant", text = assistant))
-    }
-}
-```
-
-慢路径不挂在 Agent 上:WorkManager /「整理」按钮读未 consumed 的 `raw_event`,云端抽,再 `ingest`。下次 `prompt` 的 `query` 自然能命中。
+`learn` 用有界 Episode；合法空稿消费，`PARSE_FAILED` / `TRUNCATED` / `REJECTED` 不消费。调度器在宿主，Runtime/Store 不持有 Android 生命周期。
 
 **两个应用只换 `graphId` 和 `pin`**,同一个 Agent 类:
 
@@ -395,7 +384,7 @@ fun Agent.promptAndCapture(store: MemoryStore, graphId: String, input: String) =
 | `query` 的 text | 用户这句 | 本章大纲/草稿专名(可另传入,不必是 last user) |
 | 工人 Agent | **不挂**用户图 | **不挂**圣经;圣经只给写章的那个 Agent |
 
-不要做成 tool(`remember` / `recall`)。召回是硬闸(`graph_id` / scope),必须在进模型之前由代码完成,不能让模型自己挑看哪张图。
+不要做成 tool(`remember` / `recall`)。召回是硬闸(`graph_id`),必须在进模型之前由代码完成,不能让模型自己挑看哪张图。
 
 ---
 

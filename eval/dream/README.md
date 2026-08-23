@@ -1,6 +1,7 @@
 # Dream eval · S1 / S1c / S2
 
 > 不是记忆引擎。S1 端侧 3B 真对话已否；下一闸是 **S1c 云端抽取**。见 [docs/spikes.md](../../docs/spikes.md)。
+> 当前云端抽取 + 夜里并节点的评测集在 [eval/memory](../memory/README.md)，不要用本目录顶替。
 
 ## 它验什么
 

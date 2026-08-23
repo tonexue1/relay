@@ -195,7 +195,7 @@
   },
   {
     "id": "ex-16-play",
-    "notes": "话剧回归。金标与 relay/memory-api AssistantPlay.GOLD 对齐。",
+    "notes": "话剧回归。金标与 relay/memory AssistantPlay.GOLD 对齐。",
     "aliases": {"美式咖啡": "美式", "坐地铁": "地铁", "吃素": "素食", "离职": "跳槽", "两年了": "两年"},
     "turns": [
       {"role": "user", "text": "我妈爱吃花生，今晚她来杭州吃饭。我自己花生过敏，火锅底料得分开。家里猫叫芝麻。"},

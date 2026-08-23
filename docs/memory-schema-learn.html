@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>记忆引擎怎么存 · 表和字段</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --paper: #fffdf8;
+      --ink: #1c1916;
+      --muted: #5c564e;
+      --line: #d9d2c5;
+      --accent: #8b3d2b;
+      --accent-soft: #f3e4dc;
+      --ok: #2d5a3d;
+      --ok-soft: #e4efe6;
+      --warn: #8a5a12;
+      --code: #3d4a5c;
+      --mono: "SF Mono", "Menlo", "Consolas", monospace;
+      --sans: "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC", "Source Han Serif SC", serif;
+      --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #161411;
+        --paper: #1e1b17;
+        --ink: #f3eee6;
+        --muted: #b4ab9e;
+        --line: #3a342c;
+        --accent: #e08a72;
+        --accent-soft: #3a241e;
+        --ok: #8fca9f;
+        --ok-soft: #1e2c22;
+        --warn: #e0b46a;
+        --code: #c5d0de;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.65;
+    }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 48px 24px 96px; }
+    header.hero { margin-bottom: 40px; }
+    .kicker {
+      font-family: var(--ui);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 8px;
+    }
+    h1 { font-size: 34px; line-height: 1.2; margin: 0 0 12px; font-weight: 650; }
+    h2 {
+      font-size: 22px;
+      margin: 56px 0 12px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+    }
+    h3 { font-size: 17px; margin: 28px 0 8px; }
+    p.lead { font-size: 18px; color: var(--muted); margin: 0; }
+    p { margin: 0 0 12px; }
+    a { color: var(--accent); }
+    code, .mono {
+      font-family: var(--mono);
+      font-size: 0.88em;
+    }
+    code {
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+    nav.toc {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin: 28px 0 8px;
+      font-family: var(--ui);
+      font-size: 14px;
+    }
+    nav.toc ol { margin: 8px 0 0; padding-left: 20px; }
+    nav.toc li { margin: 4px 0; }
+    .note {
+      background: var(--paper);
+      border-left: 3px solid var(--accent);
+      padding: 12px 16px;
+      margin: 16px 0;
+      color: var(--muted);
+    }
+    .steps {
+      display: grid;
+      gap: 8px;
+      margin: 16px 0 8px;
+    }
+    .step {
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      gap: 12px;
+      align-items: start;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      cursor: pointer;
+      text-align: left;
+      font: inherit;
+      color: inherit;
+      width: 100%;
+    }
+    .step:hover { border-color: var(--accent); }
+    .step.on { background: var(--accent-soft); border-color: var(--accent); }
+    .num {
+      font-family: var(--ui);
+      font-size: 13px;
+      font-weight: 650;
+      color: var(--accent);
+      padding-top: 2px;
+    }
+    .step b { display: block; }
+    .step span { color: var(--muted); font-size: 14px; }
+    .example {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px;
+      margin: 16px 0 24px;
+      min-height: 120px;
+    }
+    .example h4 { margin: 0 0 8px; font-size: 14px; font-family: var(--ui); color: var(--accent); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      font-family: var(--ui);
+      font-size: 14px;
+      margin: 10px 0 20px;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; letter-spacing: 0.04em; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { font-family: var(--mono); white-space: nowrap; }
+    .er {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 20px 12px;
+      margin: 16px 0;
+      overflow-x: auto;
+    }
+    .er svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+    .er text { fill: var(--ink); font-family: var(--ui); }
+    .er .box { fill: var(--paper); stroke: var(--line); }
+    .er .box.hot { stroke: var(--accent); fill: var(--accent-soft); }
+    .er .wire { stroke: var(--muted); fill: none; }
+    .clocks {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 12px 0 20px;
+    }
+    @media (max-width: 640px) { .clocks { grid-template-columns: 1fr; } }
+    .clock {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .clock h4 { margin: 0 0 6px; font-size: 15px; }
+    .clock p { margin: 0; color: var(--muted); font-size: 14px; }
+    footer {
+      margin-top: 64px;
+      color: var(--muted);
+      font-family: var(--ui);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <p class="kicker">Relay · memory · schema v5</p>
+      <h1>记忆引擎怎么存</h1>
+      <p class="lead">引擎里没有模型。库是 Room + bundled SQLite（带 FTS5）。它只做确定性的事：收下原文、按字写入三元组、按名字找出邻居、把旧边从活图上拿掉。下面用表把这件事讲清楚。</p>
+    </header>
+
+    <nav class="toc">
+      目录
+      <ol>
+        <li><a href="#idea">先建立图景</a></li>
+        <li><a href="#walk">跟一句「我对花生过敏」</a></li>
+        <li><a href="#er">七张表怎么连</a></li>
+        <li><a href="#raw">原文：raw_event + 柜子</a></li>
+        <li><a href="#log">底账：fact_log</a></li>
+        <li><a href="#graph">活图：node / edge / alias</a></li>
+        <li><a href="#clock">edge 上的双时钟</a></li>
+        <li><a href="#aux">辅助：FTS 和审核篮</a></li>
+        <li><a href="#api">接口对上哪张表</a></li>
+      </ol>
+    </nav>
+
+    <h2 id="idea">1. 先建立图景</h2>
+    <p>用户看见的是 chatbot。库里不是聊天记录本身，是一张<strong>个人图</strong>：点是人/物，线是闭集关系（<code>allergic_to</code>、<code>likes</code>、<code>works_at</code>…）。</p>
+    <p>所以存的时候拆成两层：</p>
+    <table>
+      <thead><tr><th>层</th><th>存什么</th><th>在哪</th></tr></thead>
+      <tbody>
+        <tr><td>附件</td><td>对话全文</td><td>ArtifactStore（文件或内存），钥匙 = SHA-256</td></tr>
+        <tr><td>账本</td><td>票、事实、点、线</td><td>一个 SQLite，下面这七张表</td></tr>
+      </tbody>
+    </table>
+    <div class="note">核心一句：<code>raw_event</code> 是对话真相（只追加）；<code>fact_log</code> 是已采纳事实（只追加）；<code>node/edge</code> 是可丢掉再重建的活图。</div>
+
+    <h2 id="walk">2. 跟一句「我对花生过敏」</h2>
+    <p>点下面每一步，看库里多了什么。这比先背字段有用。</p>
+    <div class="steps">
+      <button class="step on" data-step="0" type="button">
+        <div class="num">0</div>
+        <div><b>还没说话</b><span>图是空的。用户节点会在第一次写入时确保存在。</span></div>
+      </button>
+      <button class="step" data-step="1" type="button">
+        <div class="num">1</div>
+        <div><b>capture · 用户说了这句话</b><span>不解析、不抽、不改图。只收原文。</span></div>
+      </button>
+      <button class="step" data-step="2" type="button">
+        <div class="num">2</div>
+        <div><b>点「抽取」· 模型吐出三元组</b><span>上云发生在这里。引擎还没动。</span></div>
+      </button>
+      <button class="step" data-step="3" type="button">
+        <div class="num">3</div>
+        <div><b>ingest · 写入 (用户, allergic_to, 花生)</b><span>此后全是 SQL。图长出来了。</span></div>
+      </button>
+      <button class="step" data-step="4" type="button">
+        <div class="num">4</div>
+        <div><b>query「花生」</b><span>FTS 命中节点，带出一跳边。</span></div>
+      </button>
+    </div>
+    <div class="example" id="walk-out"></div>
+
+    <h2 id="er">3. 七张表怎么连</h2>
+    <p><code>text_ref</code> 和 <code>raw_event_ids</code> 不是数据库外键，是字符串钥匙。真正的外键味道在 <code>edge.src/dst → node.id</code>。</p>
+    <div class="er">
+      <svg viewBox="0 0 820 280" width="820" height="280" aria-label="表关系">
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" fill="#8b3d2b" />
+          </marker>
+        </defs>
+        <rect class="box" x="20" y="20" width="150" height="52" rx="8" />
+        <text x="95" y="42" text-anchor="middle" font-size="13" font-weight="600">ArtifactStore</text>
+        <text x="95" y="58" text-anchor="middle" font-size="11" opacity="0.65">柜子 · 不是 SQL</text>
+
+        <rect class="box hot" x="230" y="20" width="140" height="52" rx="8" />
+        <text x="300" y="42" text-anchor="middle" font-size="13" font-weight="600">raw_event</text>
+        <text x="300" y="58" text-anchor="middle" font-size="11" opacity="0.65">原文票</text>
+
+        <rect class="box hot" x="430" y="20" width="140" height="52" rx="8" />
+        <text x="500" y="42" text-anchor="middle" font-size="13" font-weight="600">fact_log</text>
+        <text x="500" y="58" text-anchor="middle" font-size="11" opacity="0.65">底账 s,p,o</text>
+
+        <rect class="box hot" x="630" y="20" width="160" height="52" rx="8" />
+        <text x="710" y="42" text-anchor="middle" font-size="13" font-weight="600">edge</text>
+        <text x="710" y="58" text-anchor="middle" font-size="11" opacity="0.65">活线</text>
+
+        <rect class="box" x="630" y="120" width="160" height="52" rx="8" />
+        <text x="710" y="142" text-anchor="middle" font-size="13" font-weight="600">node</text>
+        <text x="710" y="158" text-anchor="middle" font-size="11" opacity="0.65">点 · 用户 / 花生</text>
+
+        <rect class="box" x="430" y="120" width="140" height="52" rx="8" />
+        <text x="500" y="142" text-anchor="middle" font-size="13" font-weight="600">node_alias</text>
+        <text x="500" y="158" text-anchor="middle" font-size="11" opacity="0.65">别名</text>
+
+        <rect class="box" x="230" y="120" width="140" height="52" rx="8" />
+        <text x="300" y="142" text-anchor="middle" font-size="13" font-weight="600">node_fts</text>
+        <text x="300" y="158" text-anchor="middle" font-size="11" opacity="0.65">搜名字</text>
+
+        <rect class="box" x="630" y="208" width="160" height="52" rx="8" />
+        <text x="710" y="230" text-anchor="middle" font-size="13" font-weight="600">pending_review</text>
+        <text x="710" y="246" text-anchor="middle" font-size="11" opacity="0.65">审核篮</text>
+
+        <path class="wire" d="M170 46 H230" marker-end="url(#arr)" />
+        <path class="wire" d="M370 46 H430" marker-end="url(#arr)" />
+        <path class="wire" d="M570 46 H630" marker-end="url(#arr)" />
+        <path class="wire" d="M710 72 V120" marker-end="url(#arr)" />
+        <path class="wire" d="M570 146 H630" marker-end="url(#arr)" />
+        <path class="wire" d="M370 146 H430" marker-end="url(#arr)" />
+        <path class="wire" d="M710 172 V208" marker-end="url(#arr)" />
+        <text x="200" y="38" font-size="10" opacity="0.7">text_ref</text>
+        <text x="390" y="38" font-size="10" opacity="0.7">ids</text>
+        <text x="588" y="38" font-size="10" opacity="0.7">投影</text>
+        <text x="718" y="100" font-size="10" opacity="0.7">src/dst</text>
+      </svg>
+    </div>
+
+    <h2 id="raw">4. 原文：raw_event + 柜子</h2>
+    <p><code>capture</code> 做两件事：正文 <code>put</code> 进 ArtifactStore，库里插一条票。<strong>正文列不存在。</strong></p>
+    <table>
+      <thead><tr><th>字段</th><th>类型</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td>TEXT PK</td><td>这条事件的 id，capture 的返回值</td></tr>
+        <tr><td>graph_id</td><td>TEXT</td><td>哪张图。<code>assistant</code> 或 <code>novel:…</code>。每条读写必带，禁止跨图 JOIN</td></tr>
+        <tr><td>ts</td><td>INTEGER</td><td>写入时间，毫秒</td></tr>
+        <tr><td>session_id</td><td>TEXT</td><td>会话，可空串</td></tr>
+        <tr><td>role</td><td>TEXT</td><td><code>user</code> / <code>assistant</code></td></tr>
+        <tr><td>text_ref</td><td>TEXT</td><td>柜子钥匙 = 正文 SHA-256。同一段字只占一份附件</td></tr>
+        <tr><td>source</td><td>TEXT</td><td>来源，默认 <code>chat</code></td></tr>
+        <tr><td>consumed</td><td>INTEGER</td><td>0 未抽，1 已抽。点抽取读的是 0；成功后再 <code>markConsumed</code></td></tr>
+      </tbody>
+    </table>
+    <p>过敏那句 capture 之后，大概是：</p>
+    <table>
+      <thead><tr><th>id</th><th>role</th><th>text_ref</th><th>consumed</th></tr></thead>
+      <tbody>
+        <tr><td>e1</td><td>user</td><td>a3f2…</td><td>0</td></tr>
+      </tbody>
+    </table>
+    <p>柜子里：<code>a3f2… → 「我对花生过敏」</code>。此时 node / edge / fact_log 仍空。</p>
+
+    <h2 id="log">5. 底账：fact_log</h2>
+    <p>模型（或人手）抽出 <code>(用户, allergic_to, 花生)</code> 之后，<code>ingest</code> 先记一笔流水。图可以重建，这笔不因为 forget 消失。</p>
+    <table>
+      <thead><tr><th>字段</th><th>类型</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td>TEXT PK</td><td>日志行</td></tr>
+        <tr><td>graph_id</td><td>TEXT</td><td>哪张图</td></tr>
+        <tr><td>ts</td><td>INTEGER</td><td>这条日志写入时间</td></tr>
+        <tr><td>s</td><td>TEXT</td><td>主语，人名/物名，<em>不是</em> node id</td></tr>
+        <tr><td>p</td><td>TEXT</td><td>谓语。必须在闭集里，否则进 errors，不写图</td></tr>
+        <tr><td>o</td><td>TEXT</td><td>宾语</td></tr>
+        <tr><td>confidence</td><td>REAL</td><td>抽取有多有把握，默认约 0.7</td></tr>
+        <tr><td>raw_event_ids</td><td>TEXT</td><td>JSON 数组，根据哪些原文抽的</td></tr>
+        <tr><td>retract</td><td>INTEGER</td><td>1 = 结束一个旧事实，不是新插一条</td></tr>
+        <tr><td>valid_at</td><td>INTEGER</td><td>世界钟：现实里何时开始为真</td></tr>
+        <tr><td>invalid_at</td><td>INTEGER 可空</td><td>世界钟：何时不再为真。空 = 还有效</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead><tr><th>s</th><th>p</th><th>o</th><th>raw_event_ids</th></tr></thead>
+      <tbody>
+        <tr><td>用户</td><td>allergic_to</td><td>花生</td><td>["e1"]</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="graph">6. 活图：node / edge / alias</h2>
+    <h3>node · 点</h3>
+    <p>同一 <code>graph_id</code> 里，<code>canonical_name</code> 唯一。类型 day1：<code>person | place | thing | pet | org | other</code>。</p>
+    <table>
+      <thead><tr><th>字段</th><th>类型</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td>TEXT PK</td><td>节点 id。用户是 <code>{graphId}:user</code></td></tr>
+        <tr><td>graph_id</td><td>TEXT</td><td>哪张图</td></tr>
+        <tr><td>type</td><td>TEXT</td><td>粗分类</td></tr>
+        <tr><td>canonical_name</td><td>TEXT</td><td>规范名：「用户」「花生」</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead><tr><th>id</th><th>type</th><th>canonical_name</th></tr></thead>
+      <tbody>
+        <tr><td>assistant:user</td><td>person</td><td>用户</td></tr>
+        <tr><td>n2</td><td>thing</td><td>花生</td></tr>
+      </tbody>
+    </table>
+
+    <h3>edge · 线（最重要）</h3>
+    <p>幂等键是 <code>(src, relation, dst)</code>。同一条再来：升 confidence、补 provenance、刷新 <code>updated_at</code>，不插第二行。</p>
+    <table>
+      <thead><tr><th>字段</th><th>类型</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>id</td><td>TEXT PK</td><td>边 id</td></tr>
+        <tr><td>graph_id</td><td>TEXT</td><td>哪张图</td></tr>
+        <tr><td>src</td><td>TEXT</td><td>起点，<code>node.id</code></td></tr>
+        <tr><td>dst</td><td>TEXT</td><td>终点，<code>node.id</code></td></tr>
+        <tr><td>relation</td><td>TEXT</td><td>谓语，如 <code>allergic_to</code></td></tr>
+        <tr><td>confidence</td><td>REAL</td><td>置信</td></tr>
+        <tr><td>created_at</td><td>INTEGER</td><td>系统钟：图何时学会</td></tr>
+        <tr><td>expired_at</td><td>INTEGER 可空</td><td>系统钟：何时从活图拿掉</td></tr>
+        <tr><td>valid_at</td><td>INTEGER</td><td>世界钟：现实何时为真</td></tr>
+        <tr><td>invalid_at</td><td>INTEGER 可空</td><td>世界钟：现实何时结束</td></tr>
+        <tr><td>updated_at</td><td>INTEGER</td><td>上次改这条边</td></tr>
+        <tr><td>provenance</td><td>TEXT</td><td>JSON，来自哪些 <code>raw_event</code> id</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead><tr><th>src</th><th>relation</th><th>dst</th><th>人话</th></tr></thead>
+      <tbody>
+        <tr><td>assistant:user</td><td>allergic_to</td><td>n2</td><td>用户 过敏 花生</td></tr>
+      </tbody>
+    </table>
+
+    <h3>node_alias · 别名</h3>
+    <p>做梦时 <code>mergeNodes(keep=林晚, drop=林晚晚)</code>：drop 的活边系统过期，缺的边接到 keep，并记别名。</p>
+    <table>
+      <thead><tr><th>字段</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>graph_id + alias</td><td>联合主键。一个叫法在一张图里只指向一个人</td></tr>
+        <tr><td>node_id</td><td>指向规范节点</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="clock">7. edge 上的双时钟</h2>
+    <p><code>query</code> / <code>facts</code> 的时刻 <code>at</code>（默认现在）要四个条件都过，才算活边：</p>
+    <p class="mono" style="background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto;">
+      created_at ≤ at AND (expired_at 空或 &gt; at)<br />
+      AND valid_at ≤ at AND (invalid_at 空或 &gt; at)
+    </p>
+    <div class="clocks">
+      <div class="clock">
+        <h4>系统钟 · 图自己的记忆</h4>
+        <p><code>created_at</code> / <code>expired_at</code>。forget、审核拒绝、mergeNodes 只打过期。意思是：<strong>图把它拿掉了</strong>，不是「现实里没发生过」。</p>
+      </div>
+      <div class="clock">
+        <h4>世界钟 · 现实里是否仍真</h4>
+        <p><code>valid_at</code> / <code>invalid_at</code>。retract、功能边替换（比如搬了家）会打失效。意思是：<strong>以前住上海，现在不住了</strong>。</p>
+      </div>
+    </div>
+    <p>没有 <code>DELETE</code>。<code>rebuildFromFactLog</code> 除外：它清空 node/edge，按日志重放。</p>
+
+    <h2 id="aux">8. 辅助：FTS 和审核篮</h2>
+    <h3>node_fts</h3>
+    <p>SQLite FTS5 虚表，给 <code>query("花生")</code> 用。命中名字后再走一跳 <code>edge</code>。它不是知识，是目录。</p>
+    <table>
+      <thead><tr><th>字段</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>node_id</td><td>UNINDEXED，回表用</td></tr>
+        <tr><td>graph_id</td><td>UNINDEXED，回表用</td></tr>
+        <tr><td>canonical_name</td><td>可搜</td></tr>
+        <tr><td>aliases</td><td>可搜</td></tr>
+      </tbody>
+    </table>
+    <p>所以 <code>query("火锅")</code> 只有图里真有「火锅」这个节点才会中。过敏要查「花生」，或 <code>facts(p=allergic_to)</code>。</p>
+
+    <h3>pending_review</h3>
+    <p>模型没把握时，边可以进篮。接受：只撤记录。拒绝：边打 <code>expired_at</code>。</p>
+    <table>
+      <thead><tr><th>字段</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>edge_id</td><td>主键，对应那条边</td></tr>
+        <tr><td>reason / confidence</td><td>为何进篮</td></tr>
+        <tr><td>s / p / o</td><td>给人看的快照，避免再 JOIN</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="api">9. 接口对上哪张表</h2>
+    <table>
+      <thead><tr><th>MemoryStore</th><th>主要碰谁</th></tr></thead>
+      <tbody>
+        <tr><td>capture</td><td>ArtifactStore + raw_event</td></tr>
+        <tr><td>unconsumed / markConsumed</td><td>raw_event.consumed</td></tr>
+        <tr><td>ingest</td><td>fact_log + node + edge（可能 pending_review）</td></tr>
+        <tr><td>query</td><td>node_fts → node → 活 edge</td></tr>
+        <tr><td>facts / neighborhood</td><td>活 edge</td></tr>
+        <tr><td>recent</td><td>系统钟上最近动过的 edge（含刚过期）</td></tr>
+        <tr><td>forget</td><td>只打 edge.expired_at</td></tr>
+        <tr><td>mergeNodes</td><td>edge 系统过期 + 可能新边 + node_alias</td></tr>
+        <tr><td>rebuildFromFactLog</td><td>清空活图，重放 fact_log</td></tr>
+        <tr><td>pendingReview / resolveReview</td><td>pending_review ± expired_at</td></tr>
+      </tbody>
+    </table>
+    <div class="note">上云不由某张表触发。playground 里点「抽取」读 <code>consumed=0</code> 的原文；点「做梦」跑夜间 agent 做 merge。许可档（private / cloud_ok）已经拿掉了。</div>
+
+    <p>对照代码：<code>relay/memory/.../db/MemoryEntities.kt</code>。设计备忘：<a href="./memory-engine.md">memory-engine.md</a>。</p>
+
+    <footer>
+      本地打开本文件即可。对着「花生过敏」把 raw_event → fact_log → node/edge 填一遍，表结构就记住了。
+    </footer>
+  </div>
+
+  <script>
+    const panels = {
+      0: `<h4>步骤 0 · 空库</h4>
+        <p>SQLite 已建表，但没有行。ArtifactStore 也是空的。还没有「记忆」。</p>`,
+      1: `<h4>步骤 1 · capture 之后</h4>
+        <p><b>柜子</b> <code>a3f2… → 我对花生过敏</code></p>
+        <p><b>raw_event</b> 一行：role=user，text_ref=a3f2…，consumed=0</p>
+        <p>node / edge / fact_log <b>仍为空</b>。这是两速写入的快路径：先记账，再抽事实。</p>`,
+      2: `<h4>步骤 2 · 点了抽取，模型还在云上</h4>
+        <p>调用方把 unconsumed 原文拼成对话，送给 CloudTripleExtractor。</p>
+        <p>得到稿：<code>(用户, allergic_to, 花生)</code>，带着 raw_event id。</p>
+        <p>引擎此时还没接到 ingest，表和步骤 1 一样。</p>`,
+      3: `<h4>步骤 3 · ingest 之后</h4>
+        <p><b>node</b> 用户、花生</p>
+        <p><b>edge</b> 用户 --allergic_to--&gt; 花生（四个时钟都活）</p>
+        <p><b>fact_log</b> 用户 allergic_to 花生，raw_event_ids=["e1"]</p>
+        <p><b>raw_event.consumed</b> 变为 1。下次抽取不再带上这句。</p>`,
+      4: `<h4>步骤 4 · query「花生」</h4>
+        <p>node_fts 命中「花生」→ 找到 n2 → 一跳边 → 「用户 过敏 花生」。</p>
+        <p>助手把这行垫进上下文。查「火锅」则空：图里没有这个节点。</p>`
+    };
+    const out = document.getElementById("walk-out");
+    const buttons = [...document.querySelectorAll(".step")];
+    function show(i) {
+      buttons.forEach((b) => b.classList.toggle("on", b.dataset.step === String(i)));
+      out.innerHTML = panels[i];
+    }
+    buttons.forEach((b) => b.addEventListener("click", () => show(b.dataset.step)));
+    show(0);
+  </script>
+</body>
+</html>

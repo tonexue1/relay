@@ -19,13 +19,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -34,6 +34,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -42,11 +45,23 @@ fun AssistantScreen(
     viewModel: AssistantViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> viewModel.onForeground()
+                Lifecycle.Event.ON_STOP -> viewModel.onBackground()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("个人助手 · memory", fontFamily = FontFamily.Monospace) },
+                title = { Text("个人助手", fontFamily = FontFamily.Monospace) },
                 navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
             )
         },
@@ -63,7 +78,7 @@ fun AssistantScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Text(
-                            "不测抽取。三波手写三元组直接 ingest，下面「本轮召回」是引擎 FTS 取出来的，和模型答得好不好无关。",
+                            "原文先落盘；4 回合或空闲后批量学习。复杂经历进 Claim，稳定关系进图。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -72,9 +87,11 @@ fun AssistantScreen(
                             onValueChange = viewModel::onApiKeyChange,
                             label = { Text("API Key") },
                             singleLine = true,
-                            enabled = !state.running,
+                            enabled = !state.busy,
                             visualTransformation = PasswordVisualTransformation(),
-                            supportingText = { Text("只给对话用。入库和召回不走模型。") },
+                            supportingText = {
+                                Text("4 回合或空闲 60 秒学习。未消费原文 ${state.pendingRaw} 条")
+                            },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -87,41 +104,13 @@ fun AssistantScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Text("三波入库", style = MaterialTheme.typography.labelLarge)
-                        AssistantCorpus.waves.forEachIndexed { index, wave ->
-                            OutlinedButton(
-                                onClick = { viewModel.seedWave(index) },
-                                enabled = !state.seeding && !state.running,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text("${wave.title} · ${wave.drafts.size} 条")
-                            }
-                            Text(
-                                wave.hint,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        if (state.seedNote.isNotBlank()) {
-                            Text(state.seedNote, style = MaterialTheme.typography.bodyMedium)
-                        }
-                        if (state.seeding) {
-                            CircularProgressIndicator(strokeWidth = 2.dp)
-                        }
-                    }
-                }
-            }
-
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Text("活图 (${state.factCount})", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            "活图 ${state.factCount} 条 · Claim ${state.claimCount} 条",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
                         SelectionContainer {
                             Text(
-                                text = state.facts.ifBlank { "还没有事实。按 1→2→3 入库。" },
+                                text = state.facts.ifBlank { "还没有事实。说两句就会进图。" },
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontFamily = FontFamily.Monospace,
                             )
@@ -141,10 +130,13 @@ fun AssistantScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Text("本轮召回", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            state.stageTrace.ifBlank { "本轮" },
+                            style = MaterialTheme.typography.labelLarge,
+                        )
                         SelectionContainer {
                             Text(
-                                text = state.recallPad.ifBlank { "（空）引擎没取到" },
+                                text = state.toolTrace.ifBlank { "对话看 tool call；学习/整理状态在上方。" },
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontFamily = FontFamily.Monospace,
                             )
@@ -157,16 +149,20 @@ fun AssistantScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (line.role == "user") {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.secondaryContainer
+                        containerColor = when (line.role) {
+                            "user" -> MaterialTheme.colorScheme.surfaceVariant
+                            "dream" -> MaterialTheme.colorScheme.tertiaryContainer
+                            else -> MaterialTheme.colorScheme.secondaryContainer
                         },
                     ),
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = if (line.role == "user") "你" else "助手",
+                            text = when (line.role) {
+                                "user" -> "你"
+                                "dream" -> "夜"
+                                else -> "助手"
+                            },
                             style = MaterialTheme.typography.labelSmall,
                         )
                         Text(line.text, style = MaterialTheme.typography.bodyMedium)
@@ -174,7 +170,7 @@ fun AssistantScreen(
                 }
             }
 
-            if (state.output.isNotEmpty() || state.running) {
+            if (state.output.isNotEmpty() || state.busy) {
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Text(
@@ -212,40 +208,52 @@ fun AssistantScreen(
                         OutlinedTextField(
                             value = state.prompt,
                             onValueChange = viewModel::onPromptChange,
-                            label = { Text("问一句，看上面召回垫了什么") },
-                            enabled = !state.running,
+                            label = { Text("说话") },
+                            enabled = !state.busy,
                             minLines = 2,
                             modifier = Modifier.fillMaxWidth(),
                         )
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            AssistantCorpus.probes.forEach { probe ->
+                            AssistantCorpus.talks.forEach { talk ->
                                 FilterChip(
-                                    selected = state.prompt == probe.prompt,
-                                    onClick = { viewModel.onPromptChange(probe.prompt) },
-                                    enabled = !state.running,
-                                    label = { Text(probe.label) },
+                                    selected = state.prompt == talk.prompt,
+                                    onClick = { viewModel.onPromptChange(talk.prompt) },
+                                    enabled = !state.busy,
+                                    label = { Text(talk.label) },
                                 )
                             }
                         }
-                        val expect = AssistantCorpus.probes.firstOrNull { it.prompt == state.prompt }?.expect
+                        val expect = AssistantCorpus.talks.firstOrNull { it.prompt == state.prompt }?.expect
                         if (expect != null) {
                             Text(
-                                "预期: $expect",
+                                expect,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Button(onClick = viewModel::send, enabled = state.canSend) {
-                                Text("发给模型")
+                                Text("发送")
                             }
-                            TextButton(onClick = viewModel::resetChat, enabled = !state.running) {
+                            Button(
+                                onClick = viewModel::toggleLatestReplay,
+                                enabled = state.replaying || (!state.busy && state.apiKey.isNotBlank()),
+                            ) {
+                                Text(
+                                    if (state.replaying) {
+                                        "停止回放 ${state.replayProgress}"
+                                    } else {
+                                        "回放刚才 12 轮"
+                                    },
+                                )
+                            }
+                            TextButton(onClick = viewModel::resetChat, enabled = !state.busy) {
                                 Text("清空对话")
                             }
-                            if (state.running) {
+                            if (state.running || state.learning || state.consolidating) {
                                 CircularProgressIndicator(strokeWidth = 2.dp)
                             }
                         }

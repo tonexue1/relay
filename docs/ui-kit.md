@@ -178,6 +178,7 @@ text 和 tool_calls 是同一路流上的两种 chunk,`ChatChunk.Text` 路径原
 | 事件监听加一支 `is ToolExecutionStart ->` | ViewModel | 追加 Widget item |
 | 聊天项 sealed 化(`Text`/`Widget` + 有序 item + 活草稿) | ViewModel/UI state | 改 state |
 | 气泡按 `displayMode` 穿/破泡 | Compose UI | 渲染分档 |
+| 完整 visible turn → `memoryText`（文本 + widget `summary()`） | ViewModel/胶水 | 给 Memory capture；不写 tool ack / 原始 spec JSON |
 | (v2)`onAction(emit)` → `agent.prompt(...)` 回环 | ViewModel | 新增回环 |
 
 `agent-core` / `relay/llm` **一行不改**。

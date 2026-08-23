@@ -38,6 +38,7 @@ class Agent(
     transformContext: (suspend (List<Message>) -> List<Message>)? = null,
     private val beforeToolCall: suspend (ToolCall) -> BeforeToolCallResult? = { null },
     private val tokenCounter: TokenCounter = HeuristicTokenCounter(),
+    private val contextAugmenters: List<ContextAugmenter> = emptyList(),
 ) {
     val state: AgentState = AgentState(
         systemPrompt = config.systemPrompt,
@@ -52,7 +53,7 @@ class Agent(
     private val timeoutMillis: Long? = config.timeoutMillis
 
     private val transformContext: suspend (List<Message>) -> List<Message> =
-        transformContext ?: defaultWindowTrim()
+        transformContext ?: { it }
 
     fun prompt(input: String): Flow<AgentEvent> = flow {
         val user = Message.user(input)
@@ -97,23 +98,37 @@ class Agent(
         )
     }
 
-    private fun defaultWindowTrim(): suspend (List<Message>) -> List<Message> = { messages ->
+    private suspend fun assembleRequestMessages(): List<Message> {
+        val additions = buildList {
+            for (augmenter in contextAugmenters) {
+                addAll(augmenter.augment(state.messages).messages)
+            }
+        }
+        val projected = transformContext(state.messages)
+        return withSystem(additions + trimTranscript(projected, additions))
+    }
+
+    private fun trimTranscript(messages: List<Message>, additions: List<Message>): List<Message> {
         val info = provider.info.model(state.model)
-        WindowTrim(
+        return WindowTrim(
             contextWindow = info?.contextWindow ?: Int.MAX_VALUE,
             reserveOutputTokens = maxTokens ?: info?.maxOutputTokens ?: 0,
             tokenCounter = tokenCounter,
             model = state.model,
             extraTokens = {
-                val sys = state.systemPrompt
-                val systemTokens = if (sys.isBlank()) {
-                    0
-                } else {
-                    tokenCounter.count(listOf(Message.system(sys)), state.model)
-                }
-                systemTokens + tokenCounter.countTools(state.tools.map { it.def }, state.model)
+                reservedTokens() + tokenCounter.count(additions, state.model)
             },
         )(messages)
+    }
+
+    private fun reservedTokens(): Int {
+        val sys = state.systemPrompt
+        val systemTokens = if (sys.isBlank()) {
+            0
+        } else {
+            tokenCounter.count(listOf(Message.system(sys)), state.model)
+        }
+        return systemTokens + tokenCounter.countTools(state.tools.map { it.def }, state.model)
     }
 
     private suspend fun kotlinx.coroutines.flow.FlowCollector<AgentEvent>.emitAllRun(
@@ -172,7 +187,7 @@ class Agent(
     ): FoldedAssistant {
         val request = ChatRequest(
             model = state.model,
-            messages = withSystem(transformContext(state.messages)),
+            messages = assembleRequestMessages(),
             tools = if (withTools) state.tools.map { it.def } else emptyList(),
             temperature = temperature,
             maxTokens = maxTokens,

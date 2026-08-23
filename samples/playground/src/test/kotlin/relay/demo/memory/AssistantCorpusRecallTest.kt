@@ -1,17 +1,33 @@
 package relay.demo.memory
 
+import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import relay.memory.GRAPH_ASSISTANT
-import relay.memory.InMemoryMemoryStore
+import relay.memory.engine.InMemoryMemoryStore
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
 class AssistantCorpusRecallTest {
 
     @Test
+    fun episodeClaimReplayKeepsExportedTwelveTurns() {
+        val replay = AssistantCorpus.episodeClaimReplay
+
+        assertEquals(12, replay.size)
+        assertTrue(replay.any { "卡片引擎" in it && "jsb" in it })
+        assertTrue(replay.any { "repository" in it && "401重试" in it })
+        assertEquals("客户端开发", replay[9])
+    }
+
+    @Test
     fun threeWavesStoreAndRecall() = runBlocking {
-        val store = InMemoryMemoryStore()
+        val store = InMemoryMemoryStore(ApplicationProvider.getApplicationContext())
         store.ingest(AssistantCorpus.waves[0].drafts)
 
         val peanut = store.query(GRAPH_ASSISTANT, "花生")
@@ -24,7 +40,7 @@ class AssistantCorpusRecallTest {
         val coffee = store.facts(GRAPH_ASSISTANT).facts.filter { it.p == "likes" && it.s == "用户" }.map { it.o }.toSet()
         assertTrue(coffee.containsAll(setOf("美式", "拿铁", "手冲", "火锅", "米线")))
         assertTrue(store.query(GRAPH_ASSISTANT, "火锅").facts.any { it.p == "likes" && it.o == "火锅" })
-        assertTrue(store.facts(GRAPH_ASSISTANT).facts.filter { it.p == "plans" }.map { it.o }.containsAll(listOf("美国", "跳槽", "考研")))
+        assertTrue(store.facts(GRAPH_ASSISTANT).facts.filter { it.p == "plans" }.map { it.o }.containsAll(listOf("美国", "跳槽", "考研", "离职")))
 
         store.ingest(AssistantCorpus.waves[2].drafts)
         val live = store.facts(GRAPH_ASSISTANT).facts
@@ -33,7 +49,7 @@ class AssistantCorpusRecallTest {
         assertEquals("三年", live.single { it.p == "work_years" }.o)
         assertEquals("清真", live.single { it.p == "diet" }.o)
         assertTrue(live.none { it.p == "plans" && it.o == "美国" })
-        assertTrue(live.filter { it.p == "plans" }.map { it.o }.containsAll(listOf("跳槽", "考研", "买房")))
+        assertTrue(live.filter { it.p == "plans" }.map { it.o }.containsAll(listOf("跳槽", "考研", "买房", "离职")))
 
         assertEquals("上海", store.query(GRAPH_ASSISTANT, "上海").facts.single { it.p == "lives_in" && it.s == "用户" }.o)
         assertTrue(store.query(GRAPH_ASSISTANT, "美国").facts.none { it.p == "plans" && it.o == "美国" })

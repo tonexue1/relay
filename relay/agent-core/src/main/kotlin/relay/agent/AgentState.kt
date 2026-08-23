@@ -7,7 +7,7 @@ import relay.llm.model.Message
  *
  * [messages] is the full transcript (source of truth). Assigning a new list copies the
  * top-level array so callers cannot mutate storage through a snapshot they still hold.
- * Window trimming happens in `transformContext` and does not write back here.
+ * Window trimming and [ContextAugmenter] extras are request views and do not write back here.
  */
 class AgentState(
     systemPrompt: String,

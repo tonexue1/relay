@@ -46,6 +46,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -53,9 +57,7 @@ dependencies {
     implementation(project(":relay:ondevice"))
     implementation(project(":relay:agent-core"))
     implementation(project(":relay:orchestra"))
-    implementation(project(":relay:memory-api"))
-    implementation(project(":relay:memory-extract"))
-    implementation(libs.androidx.sqlite.bundled)
+    implementation(project(":relay:memory"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -70,4 +72,13 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.sqlite.bundled.jvm)
+}
+
+configurations.configureEach {
+    if (name.contains("UnitTest", ignoreCase = true)) {
+        exclude(group = "androidx.sqlite", module = "sqlite-bundled-android")
+    }
 }
