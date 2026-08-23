@@ -28,16 +28,14 @@ Agent <--execute() 回 "已渲染柱状图…"(ack)-- UI 工具
 用户点 widget --WidgetAction--> ViewModel --agent.prompt(...)--> 新 turn(v2)
 ```
 
-分两层交付:
-- `relay/ui-kit`(纯渲染,答 ①)—— 零 agent/llm 依赖。
-- 一层薄胶水(答 ②)—— UI 工具的 `ToolDef` + ViewModel 监听。先放 `samples/playground`,稳了再抽 `relay/ui-agent`。
+一层交付:`relay/ui-kit` 同时放渲染器和 UI 工具胶水（`ToolDef`、turn reducer）。ViewModel 只负责监听事件和把 `WidgetHost` 画进对话。
 
 ---
 
 ## 2. 问题①:UI 引擎怎么设计
 
 ### 2.1 定位与边界
-纯函数式渲染器:`WidgetSpec → @Composable`。**不认识 agent**,可被工具 / 记忆 / 硬编码任意来源驱动。这条"零 agent 依赖"是模块纪律,别破。
+渲染器是纯函数:`WidgetSpec → @Composable`,可被工具 / 记忆 / 硬编码任意来源驱动。同一模块里的 `uiArtifactTools` / `OrderedTurnReducer` 负责把 agent 事件变成 turn。
 
 ### 2.2 三个核心件
 1. **契约 `WidgetSpec`** —— 封闭集、带版本、**数据/表现分离**。
@@ -170,11 +168,11 @@ text 和 tool_calls 是同一路流上的两种 chunk,`ChatChunk.Text` 路径原
 - **单一事实源 + maxTurns**:`ToolDef.parameters` 与 `WidgetSpec` 渲染器读的字段必须同源(v1 手写贴紧,后续一处派生)。要"文本→图→叙述→再图"多段交错,`maxTurns` 需 ≥2。
 
 ### 3.9 对接清单(对接面极小)
-关键原则:**引擎不 import agent,agent 不 import 引擎**,两者只在一层胶水(ViewModel/UiToolbox)相遇。所以能**先把引擎建到满能力、零 agent**,最后一下午接上。对接只动这几处,**核心零改**:
+关键原则:**`agent-core` 不 import ui-kit**。渲染器和 UI tools 都在 `:relay:ui-kit`，宿主 ViewModel 只监听事件、推进 `OrderedTurnReducer`、把 `WidgetHost` 画进对话。对接只动这几处,**核心零改**:
 
 | 改动点 | 在哪 | 动了谁 |
 |---|---|---|
-| UI 工具定义(render_* 的 ToolDef + execute 回 ack) | `UiToolbox`(胶水) | 新增,不改核心 |
+| UI 工具定义(render_* 的 ToolDef + execute 回 ack) | `uiArtifactTools`(ui-kit) | 新增,不改 agent-core |
 | 事件监听加一支 `is ToolExecutionStart ->` | ViewModel | 追加 Widget item |
 | 聊天项 sealed 化(`Text`/`Widget` + 有序 item + 活草稿) | ViewModel/UI state | 改 state |
 | 气泡按 `displayMode` 穿/破泡 | Compose UI | 渲染分档 |
@@ -189,8 +187,7 @@ text 和 tool_calls 是同一路流上的两种 chunk,`ChatChunk.Text` 路径原
 
 | 模块 | 内容 | 依赖 |
 |---|---|---|
-| `relay/ui-kit`(新) | `WidgetSpec`、`WidgetRegistry`、`WidgetHost`、内置渲染器、`displayMode`、`WidgetAction` | Compose + 图表库(Vico),**零 agent/llm** |
-| 胶水(先在 `samples/playground`,稳后抽 `relay/ui-agent`) | `UiToolbox`(render_* 的 ToolDef,execute 回 ack)、ViewModel 监听 `ToolExecutionStart`、聊天项 sealed 化、气泡里调 `WidgetHost` | ui-kit + agent-core + llm |
+| `relay/ui-kit` | `WidgetSpec`、`WidgetHost`、内置渲染器、`uiArtifactTools`、`OrderedTurnReducer` | Compose + 图表库(Vico) + agent-core + artifacts |
 
 ```mermaid
 sequenceDiagram
@@ -285,9 +282,9 @@ sequenceDiagram
 ## 6. 当前实现合同
 
 ### 6.1 模块
-- `:relay:ui-kit`：Android/Compose 纯渲染模块，零 agent/llm/memory/storage 依赖。合同见 `WidgetSpec.kt`，防御解析见 `WidgetParser.kt`，入口见 `WidgetHost.kt`。
+- `:relay:ui-kit`：渲染 + UI 工具胶水。合同见 `WidgetSpec.kt`，防御解析见 `WidgetParser.kt`，入口见 `WidgetHost.kt`；`uiArtifactTools` 暴露 render/write tools，`OrderedTurnReducer` 按 `call.id` 保序。
 - `:relay:artifacts`：JVM 不可变产物仓库。manifest 原子替换，正文按 SHA-256 内容寻址；支持 create/revise/read/list/activate/feedback。
-- `samples/playground`：唯一胶水层。`UiArtifactTools.kt` 暴露专用 function tools；`OrderedTurnReducer.kt` 按 `call.id` 保序并更新并行 tool。
+- `samples/playground` / `samples/assistant`：宿主胶水，把事件推进 reducer、把 widget 画进对话。
 
 ### 6.2 产物生命周期
 1. `write_markdown_artifact` / `write_html_artifact` 校验 UTF-8 单文件、名字、MIME、大小和静态风险。

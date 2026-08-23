@@ -1,4 +1,4 @@
-package relay.uiagent
+package relay.uikit
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -15,8 +15,6 @@ import relay.agent.Tool
 import relay.artifacts.ArtifactRef
 import relay.artifacts.ArtifactRepository
 import relay.artifacts.ArtifactValidator
-import relay.uikit.WidgetParser
-import relay.uikit.WidgetSpec
 
 object UiToolNames {
     const val MARKDOWN = "render_markdown"

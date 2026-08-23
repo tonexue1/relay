@@ -28,6 +28,8 @@ android {
 }
 
 dependencies {
+    api(project(":relay:agent-core"))
+    api(project(":relay:artifacts"))
     implementation(libs.kotlinx.serialization.json)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

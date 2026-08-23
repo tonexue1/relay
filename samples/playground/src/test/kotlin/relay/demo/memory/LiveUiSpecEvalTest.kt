@@ -13,9 +13,9 @@ import relay.agent.AgentConfig
 import relay.agent.AgentEvent
 import relay.artifacts.FileArtifactRepository
 import relay.llm.provider.DeepSeek
-import relay.uiagent.UiToolNames
-import relay.uiagent.uiArtifactTools
-import relay.uiagent.widgetFromToolCall
+import relay.uikit.UiToolNames
+import relay.uikit.uiArtifactTools
+import relay.uikit.widgetFromToolCall
 import relay.uikit.FallbackSpec
 
 class LiveUiSpecEvalTest {

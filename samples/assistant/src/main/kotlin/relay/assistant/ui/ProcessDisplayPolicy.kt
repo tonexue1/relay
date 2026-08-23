@@ -1,8 +1,8 @@
 package relay.assistant.ui
 
-import relay.uiagent.ProcessStatus
-import relay.uiagent.TurnItem
-import relay.uiagent.UiToolNames
+import relay.uikit.ProcessStatus
+import relay.uikit.TurnItem
+import relay.uikit.UiToolNames
 
 internal enum class ProcessDisplay {
     HIDDEN,

@@ -61,7 +61,6 @@ dependencies {
     implementation(project(":relay:memory"))
     implementation(project(":relay:artifacts"))
     implementation(project(":relay:ui-kit"))
-    implementation(project(":relay:ui-agent"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

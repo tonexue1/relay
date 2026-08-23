@@ -89,8 +89,8 @@ import relay.assistant.theme.Paper
 import relay.assistant.theme.PaperRaised
 import relay.assistant.theme.Rust
 import relay.assistant.theme.RustSoft
-import relay.uiagent.ChatTurn
-import relay.uiagent.TurnItem
+import relay.uikit.ChatTurn
+import relay.uikit.TurnItem
 import relay.uikit.ChoiceFormSpec
 import relay.uikit.FileSpec
 import relay.uikit.GraphWidget
@@ -666,7 +666,7 @@ private fun AssistantTurn(
     onSubmitChoiceForm: (String, Map<String, List<String>>) -> Unit,
 ) {
     val processes = turn.items.filterIsInstance<TurnItem.Process>()
-    val hasFailure = processes.any { it.status == relay.uiagent.ProcessStatus.FAILED }
+    val hasFailure = processes.any { it.status == relay.uikit.ProcessStatus.FAILED }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
             modifier = Modifier.clip(RoundedCornerShape(999.dp))
@@ -906,7 +906,7 @@ private fun ToolLogSheet(processes: List<TurnItem.Process>) {
         processes.forEach { process ->
             Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.Top) {
                 Text(
-                    if (process.status == relay.uiagent.ProcessStatus.FAILED) "×" else "✓",
+                    if (process.status == relay.uikit.ProcessStatus.FAILED) "×" else "✓",
                     color = Rust,
                     fontWeight = FontWeight.Bold,
                 )

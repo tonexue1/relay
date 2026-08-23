@@ -5,7 +5,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import relay.llm.model.ToolCall
-import relay.uiagent.UiToolNames
+import relay.uikit.UiToolNames
 
 class ArtifactGroundingGateTest {
     @Test

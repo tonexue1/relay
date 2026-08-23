@@ -38,10 +38,10 @@ import relay.memory.engine.RoomMemoryDb
 import relay.memory.engine.SqliteMemoryStore
 import relay.memory.extract.CloudTripleExtractor
 import relay.memory.predicateLabel
-import relay.uiagent.ChatTurn
-import relay.uiagent.OrderedTurnReducer
-import relay.uiagent.TurnItem
-import relay.uiagent.uiArtifactTools
+import relay.uikit.ChatTurn
+import relay.uikit.OrderedTurnReducer
+import relay.uikit.TurnItem
+import relay.uikit.uiArtifactTools
 import relay.uikit.ChoiceFormSpec
 import relay.uikit.GraphEdge
 import relay.uikit.GraphNode
@@ -388,7 +388,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { state ->
             val firstUserText = state.turns.firstOrNull { it.role == "user" }
                 ?.items
-                ?.filterIsInstance<relay.uiagent.TurnItem.Text>()
+                ?.filterIsInstance<relay.uikit.TurnItem.Text>()
                 ?.firstOrNull()
                 ?.text
                 .orEmpty()
@@ -558,7 +558,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.value.turns
             .filter { it.role == "user" }
             .flatMap { it.items }
-            .filterIsInstance<relay.uiagent.TurnItem.Text>()
+            .filterIsInstance<relay.uikit.TurnItem.Text>()
             .forEach { appendLine(it.text) }
         _uiState.value.relations.filter { it.recallable }.forEach {
             appendLine("${it.subject} ${it.predicate} ${it.objectValue}")

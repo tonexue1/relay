@@ -7,8 +7,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import relay.llm.model.Message
-import relay.uiagent.ChatTurn
-import relay.uiagent.TurnItem
+import relay.uikit.ChatTurn
+import relay.uikit.TurnItem
 import relay.uikit.CardSpec
 import relay.uikit.ChoiceFormSpec
 import relay.uikit.ChoiceOption

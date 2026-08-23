@@ -1,4 +1,4 @@
-package relay.uiagent
+package relay.uikit
 
 import java.util.UUID
 import kotlinx.serialization.SerialName
@@ -10,9 +10,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import relay.agent.AgentEvent
 import relay.artifacts.ArtifactRef
 import relay.llm.model.ChatChunk
-import relay.uikit.FileSpec
-import relay.uikit.FallbackSpec
-import relay.uikit.WidgetSpec
 
 @Serializable
 data class ChatTurn(

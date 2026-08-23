@@ -1,7 +1,7 @@
 package relay.assistant.state
 
-import relay.uiagent.ChatTurn
-import relay.uiagent.TurnItem
+import relay.uikit.ChatTurn
+import relay.uikit.TurnItem
 import relay.uikit.ChoiceFormSpec
 
 internal object ChoiceContinuation {

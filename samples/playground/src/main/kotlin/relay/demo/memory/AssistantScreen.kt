@@ -44,9 +44,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import relay.uiagent.ChatTurn
-import relay.uiagent.ProcessStatus
-import relay.uiagent.TurnItem
+import relay.uikit.ChatTurn
+import relay.uikit.ProcessStatus
+import relay.uikit.TurnItem
 import relay.uikit.GraphWidget
 import relay.uikit.HtmlArtifactPreview
 import relay.uikit.MarkdownRenderer

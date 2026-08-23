@@ -3,8 +3,8 @@ package relay.assistant.state
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import relay.uiagent.ChatTurn
-import relay.uiagent.TurnItem
+import relay.uikit.ChatTurn
+import relay.uikit.TurnItem
 import relay.uikit.ChoiceFormSpec
 import relay.uikit.ChoiceOption
 import relay.uikit.ChoiceQuestion

@@ -6,10 +6,10 @@ import org.junit.Test
 import relay.agent.AgentEvent
 import relay.llm.model.ChatChunk
 import relay.llm.model.ToolCall
-import relay.uiagent.OrderedTurnReducer
-import relay.uiagent.ProcessStatus
-import relay.uiagent.TurnItem
-import relay.uiagent.UiToolNames
+import relay.uikit.OrderedTurnReducer
+import relay.uikit.ProcessStatus
+import relay.uikit.TurnItem
+import relay.uikit.UiToolNames
 
 class OrderedTurnReducerTest {
     @Test

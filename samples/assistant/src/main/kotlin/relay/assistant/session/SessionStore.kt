@@ -6,9 +6,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import relay.llm.model.Message
-import relay.uiagent.ChatTurn
-import relay.uiagent.OrderedTurnReducer
-import relay.uiagent.TurnItem
+import relay.uikit.ChatTurn
+import relay.uikit.OrderedTurnReducer
+import relay.uikit.TurnItem
 import relay.uikit.ChoiceFormSpec
 
 @Serializable
@@ -26,7 +26,7 @@ data class AssistantSession(
     val summary: String
         get() = turns.asReversed()
             .flatMap { it.items.asReversed() }
-            .filterIsInstance<relay.uiagent.TurnItem.Text>()
+            .filterIsInstance<relay.uikit.TurnItem.Text>()
             .firstOrNull()
             ?.text
             ?.replace(Regex("\\s+"), " ")

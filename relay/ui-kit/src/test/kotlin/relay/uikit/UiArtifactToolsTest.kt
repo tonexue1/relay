@@ -1,4 +1,4 @@
-package relay.uiagent
+package relay.uikit
 
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
@@ -6,16 +6,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import relay.artifacts.FileArtifactRepository
-import relay.uikit.ChartAxis
-import relay.uikit.ChartKind
-import relay.uikit.ChartSpec
-import relay.uikit.ChoiceFormSpec
-import relay.uikit.ChoiceKind
 
 class UiArtifactToolsTest {
     @Test
     fun `product capability set excludes html`() {
-        val repository = FileArtifactRepository(Files.createTempDirectory("ui-agent-test").toFile())
+        val repository = FileArtifactRepository(Files.createTempDirectory("ui-kit-test").toFile())
         val names = uiArtifactTools(repository, includeHtml = false).map { it.def.name }
 
         assertTrue(UiToolNames.WRITE_MARKDOWN in names)

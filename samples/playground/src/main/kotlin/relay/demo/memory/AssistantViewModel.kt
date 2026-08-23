@@ -40,9 +40,9 @@ import relay.memory.engine.FileArtifactStore
 import relay.memory.engine.RoomMemoryDb
 import relay.memory.engine.SqliteMemoryStore
 import relay.memory.extract.CloudTripleExtractor
-import relay.uiagent.ChatTurn
-import relay.uiagent.OrderedTurnReducer
-import relay.uiagent.uiArtifactTools
+import relay.uikit.ChatTurn
+import relay.uikit.OrderedTurnReducer
+import relay.uikit.uiArtifactTools
 import relay.uikit.GraphEdge
 import relay.uikit.GraphNode
 import relay.uikit.GraphSpec

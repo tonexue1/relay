@@ -2,9 +2,9 @@ package relay.assistant.ui
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import relay.uiagent.ProcessStatus
-import relay.uiagent.TurnItem
-import relay.uiagent.UiToolNames
+import relay.uikit.ProcessStatus
+import relay.uikit.TurnItem
+import relay.uikit.UiToolNames
 
 class ProcessDisplayPolicyTest {
     @Test

@@ -6,7 +6,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import relay.agent.BeforeToolCallResult
 import relay.llm.model.ToolCall
-import relay.uiagent.UiToolNames
+import relay.uikit.UiToolNames
 
 object ArtifactGroundingGate {
     fun check(call: ToolCall, evidence: String): BeforeToolCallResult? {

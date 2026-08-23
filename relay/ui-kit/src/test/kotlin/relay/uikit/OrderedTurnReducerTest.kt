@@ -1,4 +1,4 @@
-package relay.uiagent
+package relay.uikit
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
