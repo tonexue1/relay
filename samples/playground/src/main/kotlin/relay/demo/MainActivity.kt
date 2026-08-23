@@ -17,6 +17,7 @@ import relay.demo.ondevice.OnDeviceTestScreen
 import relay.demo.orchestra.GroupChatScreen
 import relay.demo.memory.AssistantScreen
 import relay.demo.theme.RelayDemoTheme
+import relay.demo.uikit.UiKitScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -45,6 +46,7 @@ private fun RelayDemoApp() {
         RelayModule.AgentCore -> AgentTestScreen(onBack = { openModule = null })
         RelayModule.Orchestra -> GroupChatScreen(onBack = { openModule = null })
         RelayModule.Memory -> AssistantScreen(onBack = { openModule = null })
+        RelayModule.UiKit -> UiKitScreen(onBack = { openModule = null })
         else -> ModuleHomeScreen(onOpenModule = { openModule = it })
     }
 }

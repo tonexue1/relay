@@ -4,6 +4,7 @@ plugins {
     // AGP 9 ships Kotlin support built in; applying kotlin-android on top is an error.
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 /**
@@ -58,6 +59,9 @@ dependencies {
     implementation(project(":relay:agent-core"))
     implementation(project(":relay:orchestra"))
     implementation(project(":relay:memory"))
+    implementation(project(":relay:artifacts"))
+    implementation(project(":relay:ui-kit"))
+    implementation(project(":relay:ui-agent"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -81,4 +85,9 @@ configurations.configureEach {
     if (name.contains("UnitTest", ignoreCase = true)) {
         exclude(group = "androidx.sqlite", module = "sqlite-bundled-android")
     }
+}
+
+tasks.withType<Test>().configureEach {
+    systemProperty("relay.liveUiEval", System.getProperty("relay.liveUiEval") ?: "")
+    testLogging.showStandardStreams = System.getProperty("relay.liveUiEval").orEmpty().isNotBlank()
 }

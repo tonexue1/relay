@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://relay.local/schemas/widget-spec-v1.json",
+  "title": "Relay WidgetSpec v1",
+  "type": "object",
+  "required": ["type", "version"],
+  "properties": {
+    "type": {
+      "enum": ["markdown", "kv", "table", "card", "choice_form", "chart", "graph", "file", "list", "image"]
+    },
+    "version": { "const": 1 },
+    "sourceId": { "type": ["string", "null"] },
+    "display": { "enum": ["INLINE", "BLOCK", "CANVAS"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "markdown" } } },
+      "then": { "required": ["markdown"], "properties": { "markdown": { "type": "string", "minLength": 1 } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "kv" } } },
+      "then": { "required": ["items"], "properties": { "items": { "type": "array", "minItems": 1 } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "table" } } },
+      "then": { "required": ["columns", "rows"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "choice_form" } } },
+      "then": {
+        "required": ["title", "questions"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "taskAnchor": { "type": "string", "maxLength": 400 },
+          "submitLabel": { "type": "string" },
+          "questions": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/choiceQuestion" }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chart" } } },
+      "then": {
+        "properties": {
+          "title": { "type": "string" },
+          "kind": { "enum": ["BAR", "LINE", "PIE"] },
+          "points": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/chartPoint" }
+          },
+          "series": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/chartSeries" }
+          },
+          "stacked": { "type": "boolean" },
+          "startAxisTitle": { "type": "string" },
+          "endAxisTitle": { "type": "string" },
+          "annotations": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/chartAnnotation" }
+          }
+        },
+        "anyOf": [
+          { "required": ["kind", "points"] },
+          { "required": ["series"] }
+        ]
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "graph" } } },
+      "then": { "required": ["nodes", "edges"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "file" } } },
+      "then": { "required": ["artifactId", "artifactVersion", "name", "mime"] }
+    }
+  ],
+  "$defs": {
+    "choiceQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "title", "options"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["SINGLE", "MULTI"] },
+        "title": { "type": "string", "minLength": 1 },
+        "hint": { "type": "string" },
+        "required": { "type": "boolean" },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/choiceOption" }
+        }
+      }
+    },
+    "choiceOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "recommended": { "type": "boolean" }
+      }
+    },
+    "chartPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "value"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "value": { "type": "number" }
+      }
+    },
+    "chartSeries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind", "points"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["BAR", "LINE"] },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/chartPoint" }
+        },
+        "axis": { "enum": ["START", "END"] }
+      }
+    },
+    "chartAnnotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "pointLabel"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "pointLabel": { "type": "string", "minLength": 1 },
+        "value": { "type": "number" },
+        "axis": { "enum": ["START", "END"] }
+      }
+    }
+  }
+}

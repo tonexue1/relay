@@ -1,0 +1,42 @@
+[
+  {
+    "id": "assistant",
+    "spec": {
+      "type": "graph",
+      "version": 1,
+      "title": "助手记忆",
+      "focusId": "用户",
+      "nodes": [
+        {"id": "用户", "label": "用户", "kind": "person"},
+        {"id": "花生", "label": "花生", "kind": "food"},
+        {"id": "北京", "label": "北京", "kind": "place"}
+      ],
+      "edges": [
+        {"source": "用户", "predicate": "过敏于", "target": "花生"},
+        {"source": "用户", "predicate": "居住于", "target": "北京"}
+      ],
+      "claims": ["用户曾在雨夜离开上一份工作"]
+    }
+  },
+  {
+    "id": "novel:linwan",
+    "chapter": 10,
+    "spec": {
+      "type": "graph",
+      "version": 1,
+      "title": "林晚 · 第十回",
+      "focusId": "林晚",
+      "chapter": 10,
+      "nodes": [
+        {"id": "林晚", "label": "林晚", "kind": "character"},
+        {"id": "顾舟", "label": "顾舟", "kind": "character"},
+        {"id": "旧车站", "label": "旧车站", "kind": "place"}
+      ],
+      "edges": [
+        {"source": "林晚", "predicate": "认识", "target": "顾舟", "chapter": 2},
+        {"source": "顾舟", "predicate": "出现于", "target": "旧车站", "chapter": 10}
+      ],
+      "claims": ["林晚怀疑顾舟隐瞒了离城原因"]
+    }
+  }
+]

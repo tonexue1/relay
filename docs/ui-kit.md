@@ -1,10 +1,10 @@
 # Relay · UIKit(UI 工具化)
 
-> 状态:设计定稿(2026-08-20),不是实现 spec。
+> 状态:已落地的实现合同(2026-08-23)。代码是最终事实源；本文记录模块边界、生命周期和验收闸门。
 > 问题:Agent 想给用户展示图表/表格/卡片时,如何调用一套封装好的 UI 工具,把内容渲染进对话里?
 > 拆成两个大问题:**① UI 引擎怎么设计;② UI 引擎怎么和 agent 联动。**
 > 前提:项目已不依赖端侧模型,直连**云端(OpenAI 兼容)**,工具调用走 **provider 原生 function calling**。GBNF/端侧约束那套在这里不需要。
-> 承接:工具两个桶(模型决定 vs 代码决定)见 [edge-tool-use.md](./edge-tool-use.md);工件存储复用 [memory-engine.md](./memory-engine.md) 的 `ArtifactStore`。
+> 承接:工具两个桶(模型决定 vs 代码决定)见 [edge-tool-use.md](./edge-tool-use.md)。UI 产物使用独立 `:relay:artifacts`，不复用 memory 原文 blob 或 orchestra 内存 Store。
 
 ---
 
@@ -41,23 +41,23 @@ Agent <--execute() 回 "已渲染柱状图…"(ack)-- UI 工具
 
 ### 2.2 三个核心件
 1. **契约 `WidgetSpec`** —— 封闭集、带版本、**数据/表现分离**。
-2. **注册表 `WidgetRegistry`** —— `type → renderer` 白名单,不认识的 type **降级为文本**(SDUI 最重要的一条教训)。
+2. **封闭分发** —— `WidgetSpec` sealed 类型 + `WidgetHost` 穷举分发；不认识的 type **降级为文本**。
 3. **宿主 `WidgetHost(spec, onAction)`** —— 唯一入口 composable:解析 → 分发 → 兜底。
 
 `WidgetSpec` 的数据形状(**契约,不是实现**):
 
 ```json
 {
-  "type": "chart",           // chart | table | card | kv | list | image | html
-  "v": 1,                    // 版本
-  "props": { "...": "只放数据与意图,不放样式" },
-  "id": "opt",
-  "actions": []              // 交互 seam,v2 再用
+  "type": "chart",           // chart | table | card | kv | choice_form | list | image | graph | file
+  "version": 1,              // 版本
+  "sourceId": "opt",
+  "display": "BLOCK",
+  "...": "各类型的数据字段；不放样式"
 }
 ```
 
 ### 2.3 widget 目录 v1(封闭集 + 逃生口)
-`text/markdown`、`chart`(bar/line/pie)、`table`、`kv`(键值)、`card`(可包一个子 widget + 标题)、`list`、`image`,外加**逃生口 `html`/`webview`**(长尾/复杂可视化)。
+`markdown`、`chart`(bar/line/pie)、`table`、`kv`、`card`、`choice_form`、`list`、`image`、`graph`、`file`。`choice_form` 支持连续单选/多选、最终提交与只读回执；`taskAnchor` 必须绑定原始用户任务，提交续轮不使用自动记忆召回，也不把宿主合成文案写入长期学习队列。HTML 不作为可嵌套 widget；它是 `file` 指向的版本化产物，只能进入沙箱预览。
 
 ### 2.4 数据/表现分离(核心护栏)
 spec 只带**数据 + 意图**(图类型、series、label);颜色/间距/字号归渲染器,走 App 的 `MaterialTheme`。**模型永远不设像素。** 这样模型的活很小,也出不了"排版崩坏"。
@@ -70,8 +70,8 @@ spec 是 LLM 产物,必须防御式解析:宽松解析、忽略未知字段、�
 | 模式 | 谁用 | 怎么放 |
 |---|---|---|
 | **inline(包进气泡)** | 小件:kv、短 list、单数据卡、caption | 和文本同一气泡,共用背景/左对齐 |
-| **block(破泡)** | 图表、表格、图片 | 不穿气泡背景,近全宽中性 `Surface` 卡,挂在该轮回复下 |
-| **canvas/expand(v2)** | 重的/可交互的 | 流里只显示折叠预览,点开进侧栏/全屏 |
+| **block(破泡)** | 表格、图片、choice form | 不穿气泡背景,近全宽中性 `Surface` 卡,挂在该轮回复下 |
+| **canvas/expand** | 图表、图谱等重交互内容 | 流里显示预览,点开进全屏 |
 
 `displayMode` 归**注册表**(不是模型)决定 —— 又一次数据/表现分离。大 widget 必须破泡:气泡 max-width 会挤扁图表,气泡 tint 会和图表配色打架。
 
@@ -282,7 +282,36 @@ sequenceDiagram
 
 ---
 
-## 6. 现在别做的
+## 6. 当前实现合同
+
+### 6.1 模块
+- `:relay:ui-kit`：Android/Compose 纯渲染模块，零 agent/llm/memory/storage 依赖。合同见 `WidgetSpec.kt`，防御解析见 `WidgetParser.kt`，入口见 `WidgetHost.kt`。
+- `:relay:artifacts`：JVM 不可变产物仓库。manifest 原子替换，正文按 SHA-256 内容寻址；支持 create/revise/read/list/activate/feedback。
+- `samples/playground`：唯一胶水层。`UiArtifactTools.kt` 暴露专用 function tools；`OrderedTurnReducer.kt` 按 `call.id` 保序并更新并行 tool。
+
+### 6.2 产物生命周期
+1. `write_markdown_artifact` / `write_html_artifact` 校验 UTF-8 单文件、名字、MIME、大小和静态风险。
+2. Store 生成 `artifactId + version`，旧版本永不覆盖；tool result 只回 ref。
+3. 对话在 ToolStart 插 pending 文件卡，ToolEnd 按 `call.id` 更新 ready/error。
+4. 预览可切预览/源码/版本，可激活旧版本；反馈记录 viewport、诊断和元素标注。
+5. “让 Relay 修复”生成显式新回合：先 `read_artifact`，再 `revise_artifact` 写新版本。禁止静默无限修复。
+
+### 6.3 HTML 沙箱威胁模型
+- 顶层是 `WebViewAssetLoader` 提供的 `https://appassets.androidplatform.net/assets/artifact-shell.html`，不使用 `file://` 或 `data:` 顶层文档。
+- 模型 HTML 位于无 `allow-same-origin` 的 sandbox iframe。CSP 默认全禁，只允许 inline script/style、data/blob 图片以及 APK 内明确打包的本地资源。
+- 禁止网络、文件/ContentProvider、Cookie/DOM Storage、定位、混合内容、弹窗、下载、顶层跳转和原生 JavaScript Bridge。
+- 子页只能 `postMessage` 给可信外壳；外壳校验固定 Schema 和长度，再通过限定 appassets origin 的 WebMessage channel 发给 Kotlin。诊断永远按不可信文本处理。
+- 收集 error、unhandledrejection、DOM ready/viewport、CSP 拦截、白屏超时和 renderer process gone；进程丢失降级到源码/摘要。
+
+### 6.4 验收闸门
+- 确定性测试：脏/未知 spec 降级；文本/tool 交错和并行结束 100% 保序；产物版本不可变；图布局确定；WebView 特权开关关闭。
+- 可选真实模型评测：`-Drelay.liveUiEval=true`；Schema 合法率 ≥95%、数据正确率 ≥90%、触发 F1 ≥0.8。
+- 真机：聊天滚动 ≥55 fps，原生 widget 首帧 <150 ms，约定大小 HTML fixture ready <300 ms。
+- 饼图使用端上 Canvas（Vico 3.x 只提供 Cartesian 图层）；柱状图和折线图使用 Vico。
+
+---
+
+## 7. 现在别做的
 - 通用布局引擎(DivKit 级嵌套布局)。
 - 交互回环(widget→新 turn)的完整实现 —— 先留 `onAction` 缝。
 - 流式半成品渲染(画一半的图)。
@@ -291,7 +320,7 @@ sequenceDiagram
 
 ---
 
-## 7. 一句话收尾
+## 8. 一句话收尾
 
 - **① 引擎怎么建**:spec 契约 + 注册表 + 兜底的纯渲染器;能力靠"内核做硬 → 加 widget 变 7 格填空配方(自带 fixtures/schema/fallback)→ 按 Tier 价值顺序铺",全程 **LLM 无关、可 CI**。
 - **② 怎么接 agent**:"widget spec 即 tool-call 参数";引擎与 agent 互不 import,只在胶水相遇,对接 = 暴露工具 + 监听 `ToolExecutionStart` 一支 + 聊天项 sealed 化 + 按 `displayMode` 穿/破泡,**核心零改**;流式用"有序 item + 活草稿"保序。

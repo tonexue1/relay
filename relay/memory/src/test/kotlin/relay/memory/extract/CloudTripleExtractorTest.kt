@@ -158,6 +158,17 @@ class CloudTripleExtractorTest {
     }
 
     @Test
+    fun parseKeepsCarButlerArchitectureClaim() {
+        val parsed = parseExtractJson(
+            """{"claims":[{"subject":"车管家","text":"车管家通过云端下发卡片并由车端动态渲染主界面"}],"triples":[{"s":"用户","p":"worked_on","o":"车管家"},{"s":"车管家","p":"has_component","o":"卡片引擎"}]}""",
+        )
+        check(parsed is ParseExtractResult.Success)
+        assertEquals("车管家通过云端下发卡片并由车端动态渲染主界面", parsed.claims.single().text)
+        assertEquals("worked_on", parsed.triples.single { it.o == "车管家" }.p)
+        assertEquals("卡片引擎", parsed.triples.single { it.p == "has_component" }.o)
+    }
+
+    @Test
     fun extractKeepsOpenClaims() = runTest {
         val provider = RecordingProvider(
             """{"claims":[{"subject":"用户","text":"用户参与的车管家应用使用云端卡片"}],"triples":[]}""",

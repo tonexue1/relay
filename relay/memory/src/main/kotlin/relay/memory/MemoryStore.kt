@@ -22,6 +22,13 @@ interface MemoryStore {
         budgetChars: Int = 2000,
     ): List<OpenClaim>
 
+    suspend fun queryClaims(
+        graphId: String,
+        text: String,
+        context: RecallContext,
+        budgetChars: Int = 2000,
+    ): List<OpenClaim>
+
     suspend fun claims(graphId: String): List<OpenClaim>
 
     suspend fun startExtractionRun(
@@ -47,11 +54,20 @@ interface MemoryStore {
         drafts: List<TripleDraft>,
         outcome: ExtractOutcome,
         rawResponse: String = "",
+        taskScopeId: String = "",
     ): IngestResult
 
     suspend fun query(
         graphId: String,
         text: String,
+        budgetChars: Int = 2000,
+        at: Long = System.currentTimeMillis(),
+    ): MemoryHit
+
+    suspend fun query(
+        graphId: String,
+        text: String,
+        context: RecallContext,
         budgetChars: Int = 2000,
         at: Long = System.currentTimeMillis(),
     ): MemoryHit
@@ -80,6 +96,14 @@ interface MemoryStore {
     /** Edges current at [at]. Optional [p] / [node] filter on relation or endpoint name. */
     suspend fun facts(
         graphId: String,
+        at: Long = System.currentTimeMillis(),
+        p: String? = null,
+        node: String? = null,
+    ): MemoryHit
+
+    suspend fun facts(
+        graphId: String,
+        context: RecallContext,
         at: Long = System.currentTimeMillis(),
         p: String? = null,
         node: String? = null,

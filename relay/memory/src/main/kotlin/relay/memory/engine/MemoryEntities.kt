@@ -6,20 +6,32 @@ import androidx.room3.Fts5
 import androidx.room3.FtsOptions
 import androidx.room3.Index
 import androidx.room3.PrimaryKey
+import relay.memory.MemoryScope
+import relay.memory.MemoryState
 
-@Entity(tableName = "raw_event")
+@Entity(
+    tableName = "raw_event",
+    indices = [
+        Index(value = ["graph_id", "session_id", "role"]),
+        Index(value = ["graph_id", "task_scope_id"]),
+    ],
+)
 data class RawEventEntity(
     @PrimaryKey val id: String,
     @ColumnInfo(name = "graph_id") val graphId: String,
     val ts: Long,
     @ColumnInfo(name = "session_id") val sessionId: String,
+    @ColumnInfo(name = "task_scope_id") val taskScopeId: String,
     val role: String,
     @ColumnInfo(name = "text_ref") val textRef: String,
     val source: String,
     val consumed: Int,
 )
 
-@Entity(tableName = "fact_log")
+@Entity(
+    tableName = "fact_log",
+    indices = [Index(value = ["graph_id", "scope", "scope_id", "state"])],
+)
 data class FactLogEntity(
     @PrimaryKey val id: String,
     @ColumnInfo(name = "graph_id") val graphId: String,
@@ -32,6 +44,9 @@ data class FactLogEntity(
     val retract: Int,
     @ColumnInfo(name = "valid_at") val validAt: Long,
     @ColumnInfo(name = "invalid_at") val invalidAt: Long?,
+    val scope: MemoryScope,
+    val state: MemoryState,
+    @ColumnInfo(name = "scope_id") val scopeId: String,
 )
 
 @Entity(
@@ -39,6 +54,7 @@ data class FactLogEntity(
     indices = [
         Index(value = ["graph_id", "created_at"]),
         Index(value = ["run_id"]),
+        Index(value = ["graph_id", "scope", "scope_id", "state"]),
     ],
 )
 data class ClaimLogEntity(
@@ -51,6 +67,9 @@ data class ClaimLogEntity(
     val confidence: Double,
     @ColumnInfo(name = "raw_event_ids") val rawEventIds: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
+    val scope: MemoryScope,
+    val state: MemoryState,
+    @ColumnInfo(name = "scope_id") val scopeId: String,
 )
 
 @Entity(
@@ -88,7 +107,10 @@ data class NodeAliasEntity(
     @ColumnInfo(name = "node_id") val nodeId: String,
 )
 
-@Entity(tableName = "edge")
+@Entity(
+    tableName = "edge",
+    indices = [Index(value = ["graph_id", "scope", "scope_id", "state"])],
+)
 data class EdgeEntity(
     @PrimaryKey val id: String,
     @ColumnInfo(name = "graph_id") val graphId: String,
@@ -102,6 +124,9 @@ data class EdgeEntity(
     @ColumnInfo(name = "invalid_at") val invalidAt: Long?,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
     val provenance: String,
+    val scope: MemoryScope,
+    val state: MemoryState,
+    @ColumnInfo(name = "scope_id") val scopeId: String,
 )
 
 @Entity(tableName = "pending_review")

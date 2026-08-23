@@ -130,6 +130,45 @@ object AssistantCorpus {
         Probe("火锅", "今晚想吃火锅，有什么别踩的雷？", "上一轮进图后应能提到花生，不要猜火锅"),
     )
 
+    /** UI-kit function calling 演示：便于在助手对话里手工验收各类 renderer。 */
+    val uiTalks: List<Probe> = listOf(
+        Probe(
+            "KV",
+            "用键值卡显示：运行环境是端侧，渲染器是 Compose，状态是正常。只展示一次，不要再复述。",
+            "应调用 render_kv，显示在助手 turn group 内",
+        ),
+        Probe(
+            "表格",
+            "用表格比较三个模块：ui-kit 已完成、artifacts 已完成、graph 已完成。不要输出 Markdown 表格。",
+            "应调用 render_table，表格破泡并可点行看详情",
+        ),
+        Probe(
+            "趋势图",
+            "用折线图展示本周调用量：周一 8、周二 14、周三 11、周四 18。",
+            "应调用 render_chart，Vico 折线图可展开",
+        ),
+        Probe(
+            "占比图",
+            "用饼图显示内容类型占比：Markdown 35、结构化组件 40、HTML 25。",
+            "应调用 render_chart(kind=PIE)",
+        ),
+        Probe(
+            "关系图",
+            "用小型关系图展示：Relay 运行于 Android，Relay 包含 ui-kit，ui-kit 使用 Compose；标出关系。",
+            "应调用 render_graph；关系来自本次明确给出的闭集",
+        ),
+        Probe(
+            "HTML 文件",
+            "生成 dashboard.html：做一个端侧运行状态仪表盘，含三个指标卡、CSS 动画和可切换的详情区域，不用外部资源。",
+            "应调用 write_html_artifact，生成文件卡并可进入沙箱预览",
+        ),
+        Probe(
+            "Markdown 文件",
+            "生成 release-notes.md，包含版本摘要、已完成清单、风险和下一步。",
+            "应调用 write_markdown_artifact，生成可预览的版本化文件卡",
+        ),
+    )
+
     /** 2026-08-23 导出的 12 轮求职对话，用于一键回放 Episode + Claim。 */
     val episodeClaimReplay: List<String> = listOf(
         "hello",

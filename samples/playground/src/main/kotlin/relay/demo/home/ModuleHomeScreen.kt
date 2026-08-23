@@ -54,8 +54,8 @@ enum class RelayModule(
     ),
     UiKit(
         artifact = "relay/ui-kit",
-        summary = "Compose 对话组件:消息流、流式打字、工具调用卡片",
-        available = false,
+        summary = "Compose 原生组件、版本化 Markdown/HTML 产物与 WebView 强沙箱",
+        available = true,
     ),
 }
 

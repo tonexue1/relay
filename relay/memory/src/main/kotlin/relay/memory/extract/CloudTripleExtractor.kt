@@ -13,6 +13,9 @@ import relay.memory.ClaimDraft
 import relay.memory.ExtractOutcome
 import relay.memory.ExtractResult
 import relay.memory.Fact
+import relay.memory.MemoryClassifier
+import relay.memory.MemoryScope
+import relay.memory.MemoryState
 import relay.memory.PREDICATES
 import relay.memory.RawEvent
 import relay.memory.TripleDraft
@@ -91,16 +94,24 @@ class CloudTripleExtractor(
                         subject = it.subject,
                         text = it.text,
                         rawEventIds = rawEventIds,
+                        scope = MemoryScope.SESSION,
+                        state = MemoryState.CANDIDATE,
                     )
                 }
                 val drafts = parsed.triples.map {
-                    TripleDraft(
+                    val draft = TripleDraft(
                         graphId = graphId,
                         s = it.s,
                         p = it.p,
                         o = it.o,
                         rawEventIds = rawEventIds,
                         retract = it.retract,
+                    )
+                    val classification = MemoryClassifier.triple(draft)
+                    draft.copy(
+                        scope = classification.scope,
+                        state = classification.state,
+                        scopeId = classification.scopeId,
                     )
                 }
                 ExtractResult(

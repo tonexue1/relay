@@ -13,16 +13,20 @@ val memory = MemoryRuntime(
     extractor = CloudTripleExtractor(provider),
     consolidator = AgentConsolidator(provider, store),
 )
+val recall = RecallContext(
+    sessionId = sessionId,
+    taskScopeId = taskId,
+)
 
 val agent = Agent(
     provider, config,
-    tools = memory.dayTools(graphId),
-    contextAugmenters = listOf(memory.recalling(graphId)),
+    tools = memory.dayTools(graphId, recall),
+    contextAugmenters = listOf(memory.recalling(graphId, recall)),
 )
 
-store.capture(RawTurn(graphId, "user", input, sessionId))
+store.capture(RawTurn(graphId, "user", input, sessionId, taskScopeId = taskId))
 val reply = agent.run(input).text.orEmpty()
-store.capture(RawTurn(graphId, "assistant", reply, sessionId))
+store.capture(RawTurn(graphId, "assistant", reply, sessionId, taskScopeId = taskId))
 
 memory.learn(graphId, sessionId) // Episode 阈值 / 空闲 / 会话结束，不要每轮调
 memory.consolidate(graphId)      // 空闲或阈值，不要每轮
@@ -38,8 +42,8 @@ memory.consolidate(graphId)      // 空闲或阈值，不要每轮
 
 | 调用 | 时机 | 返回 |
 |---|---|---|
-| `recalling(graphId, pin, budgetChars)` | 每次进模型前 | `ContextAugmenter` |
-| `dayTools(graphId)` | 白天 Agent | query / facts |
+| `recalling(graphId, RecallContext, pin, budgetChars, querySelector)` | 每次进模型前 | `ContextAugmenter` |
+| `dayTools(graphId, RecallContext)` | 白天 Agent | scoped query / facts |
 | `nightTools(graphId)` | 夜间 Agent | recent / neighborhood / merge / facts / ingest |
 | `learn(graphId)` | 处理最早的未消费 session | `LearnReport` |
 | `learn(graphId, sessionId)` | 同一会话积成 Episode 后 | `LearnReport` |
@@ -47,10 +51,16 @@ memory.consolidate(graphId)      // 空闲或阈值，不要每轮
 | `consolidate(graphId, since)` | 空闲 / 阈值 | `ConsolidationReport` |
 
 `pin` 会无条件垫进召回块（小说 logline 用）。`budgetChars` 默认 2000。
+`querySelector` 默认选择最后一条 user 消息；宿主可传 `RecallQuerySelector` 排除合成消息或绑定任务查询。
+
+`RecallContext(sessionId, taskScopeId)` 将候选限制为：已确认的 `PROFILE`、当前
+`TASK`、当前 `SESSION`。默认 `allowCrossTask=false`；只有宿主明确创建
+`RecallContext(..., allowCrossTask=true)` 时，白天工具才可跨任务读取，模型参数本身
+不能打开该能力。无 context 的旧重载继续保留以兼容现有调用；新助手接入应传 context。
 
 `LearnReport`：`runId`、`sessionId`、`eventIds`、`claims`、`drafts`、`outcome`、抽取/入库错误。无未消费原文时为空报告。
 
-`CloudTripleExtractor` 双输出：注册关系能忠实表达的事实进 `drafts`；复杂但耐久的信息进开放 `claims`。合法纯闲聊是 `SUCCESS_EMPTY`；解析失败、截断、拒答不消费原文。
+`CloudTripleExtractor` 双输出：注册关系能忠实表达的事实进 `drafts`；复杂但耐久的信息进开放 `claims`。合法纯闲聊是 `SUCCESS_EMPTY` 并消费原文。用户轮看起来像个人事实但两边都空时，运行时改判 `LOW_YIELD`，**不消费**，下次还可以重抽。解析失败、截断、拒答也不消费原文。
 
 没有挂 consolidator 时，`consolidate` 返回空报告。
 
@@ -73,14 +83,17 @@ SqliteMemoryStore(RoomMemoryDb.file(ctx), FileArtifactStore(dir))
 | `capture(turn)` | 原文入队，未消费 |
 | `ingest(drafts)` | 按字写入。坏 `p` / 空字段进 `errors` |
 | `ingestClaims` / `queryClaims` / `claims` | 开放 Claim 写入、FTS 查询、枚举 |
-| `query(graphId, text)` | 字面 FTS + 一跳 |
-| `facts` / `recent` / `neighborhood` | 活边 / 近系统钟 / 邻居 |
+| `query(graphId, text[, RecallContext])` | 收紧后的字面 FTS + 一跳 |
+| `facts(graphId[, RecallContext])` / `recent` / `neighborhood` | 活边 / 近系统钟 / 邻居 |
 | `mergeNodes(keep, drop)` | 并节点，只动系统钟 |
 | `unconsumed` / `markConsumed` | 抽取队列 |
 | `forget` / `pendingReview` / `resolveReview` | 剪边、功能覆盖审核 |
 | `rebuildFromFactLog` | 丢掉活图再重放 |
 
-稿：`RawTurn`、`ClaimDraft`、`TripleDraft`（可 `retract`、`validAt` / `invalidAt`）。命中：`OpenClaim` / `MemoryHit` / `Fact`。`GRAPH_ASSISTANT`、`PREDICATES` 在根包。
+稿：`RawTurn`、`ClaimDraft`、`TripleDraft`（可 `retract`、`validAt` /
+`invalidAt`、`scope` / `state` / `scopeId`）。命中：`OpenClaim` / `MemoryHit` /
+`Fact`，均可读取作用域元数据。作用域为 `PROFILE` / `TASK` / `SESSION`，状态为
+`CANDIDATE` / `CONFIRMED`。`GRAPH_ASSISTANT`、`PREDICATES` 在根包。
 
 ## 模型侧零件
 

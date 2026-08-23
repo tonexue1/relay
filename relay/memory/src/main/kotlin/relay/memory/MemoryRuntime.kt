@@ -6,6 +6,7 @@ import relay.agent.ContextAugmenter
 import relay.agent.Tool
 import relay.memory.agent.dayTools
 import relay.memory.agent.nightTools
+import relay.memory.agent.RecallQuerySelector
 import relay.memory.agent.recalling
 import relay.memory.dream.ConsolidationReport
 import relay.memory.dream.MemoryConsolidator
@@ -39,9 +40,20 @@ class MemoryRuntime(
         graphId: String,
         pin: String = "",
         budgetChars: Int = 2000,
-    ): ContextAugmenter = store.recalling(graphId, pin, budgetChars)
+        querySelector: RecallQuerySelector = RecallQuerySelector.LatestUser,
+    ): ContextAugmenter = store.recalling(graphId, pin, budgetChars, querySelector)
+
+    fun recalling(
+        graphId: String,
+        context: RecallContext,
+        pin: String = "",
+        budgetChars: Int = 2000,
+        querySelector: RecallQuerySelector = RecallQuerySelector.LatestUser,
+    ): ContextAugmenter = store.recalling(graphId, context, pin, budgetChars, querySelector)
 
     fun dayTools(graphId: String): List<Tool> = store.dayTools(graphId)
+
+    fun dayTools(graphId: String, context: RecallContext): List<Tool> = store.dayTools(graphId, context)
 
     fun nightTools(graphId: String): List<Tool> = store.nightTools(graphId)
 
@@ -73,7 +85,13 @@ class MemoryRuntime(
                 graphId = batch.graphId,
                 dialogue = CloudTripleExtractor.formatTurns(batch.contextEvents + batch.events),
                 rawEventIds = batch.eventIds,
-                priorFacts = store.facts(batch.graphId).facts,
+                priorFacts = store.facts(
+                    batch.graphId,
+                    RecallContext(
+                        sessionId = batch.sessionId,
+                        taskScopeId = batch.taskScopeId.ifBlank { batch.sessionId },
+                    ),
+                ).facts,
             )
         } catch (e: Exception) {
             store.finishExtractionRun(
@@ -82,6 +100,45 @@ class MemoryRuntime(
                 errors = listOf(e.message ?: e.toString()),
             )
             throw e
+        }
+        if (extracted.successful && extracted.claims.isEmpty() && extracted.drafts.isEmpty()) {
+            val fallbackClaims = HardFactClaims.from(batch.graphId, batch.events)
+            if (fallbackClaims.isNotEmpty()) {
+                val ingested = store.commitExtraction(
+                    graphId = batch.graphId,
+                    sessionId = batch.sessionId,
+                    runId = runId,
+                    eventIds = batch.eventIds,
+                    claims = fallbackClaims,
+                    drafts = emptyList(),
+                    outcome = ExtractOutcome.SUCCESS,
+                    rawResponse = extracted.raw,
+                    taskScopeId = batch.taskScopeId,
+                )
+                return LearnReport(
+                    runId = runId,
+                    sessionId = batch.sessionId,
+                    eventIds = batch.eventIds,
+                    claims = fallbackClaims,
+                    outcome = ExtractOutcome.SUCCESS,
+                    errors = ingested.errors,
+                )
+            }
+            if (LearnYield.shouldRetryEmpty(batch.events)) {
+                store.finishExtractionRun(
+                    runId = runId,
+                    outcome = ExtractOutcome.LOW_YIELD,
+                    rawResponse = extracted.raw,
+                    errors = listOf("empty extract on factual user turn"),
+                )
+                return LearnReport(
+                    runId = runId,
+                    sessionId = batch.sessionId,
+                    eventIds = batch.eventIds,
+                    outcome = ExtractOutcome.LOW_YIELD,
+                    extractErrors = listOf("empty extract on factual user turn"),
+                )
+            }
         }
         if (!extracted.successful) {
             store.finishExtractionRun(
@@ -107,6 +164,7 @@ class MemoryRuntime(
             drafts = extracted.drafts,
             outcome = extracted.outcome,
             rawResponse = extracted.raw,
+            taskScopeId = batch.taskScopeId,
         )
         return LearnReport(
             runId = runId,

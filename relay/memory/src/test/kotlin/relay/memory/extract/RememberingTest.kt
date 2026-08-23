@@ -10,6 +10,7 @@ import org.robolectric.annotation.Config
 import relay.llm.model.Message
 import relay.memory.GRAPH_ASSISTANT
 import relay.memory.TripleDraft
+import relay.memory.agent.RecallQuerySelector
 import relay.memory.agent.recalling
 
 @RunWith(RobolectricTestRunner::class)
@@ -53,5 +54,19 @@ class RememberingTest {
         val out = store.recalling(GRAPH_ASSISTANT)
             .augment(listOf(Message.user("码头见")))
         assertTrue(out.messages.isEmpty())
+    }
+
+    @Test
+    fun hostCanSelectTheRecallQuery() = runTest {
+        val store = testStore()
+        store.ingest(listOf(TripleDraft(GRAPH_ASSISTANT, "用户", "allergic_to", "花生")))
+        val selector = RecallQuerySelector { messages ->
+            messages.first { it.content.orEmpty().contains("花生") }.content.orEmpty()
+        }
+
+        val out = store.recalling(GRAPH_ASSISTANT, querySelector = selector)
+            .augment(listOf(Message.user("花生过敏"), Message.user("今天天气怎么样")))
+
+        assertTrue(out.messages.single().content.orEmpty().contains("花生"))
     }
 }

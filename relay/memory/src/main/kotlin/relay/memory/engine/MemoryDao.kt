@@ -6,6 +6,8 @@ import androidx.room3.Insert
 import androidx.room3.OnConflictStrategy
 import androidx.room3.Query
 import androidx.room3.Transaction
+import relay.memory.MemoryScope
+import relay.memory.MemoryState
 
 @Dao
 abstract class MemoryDao {
@@ -44,6 +46,9 @@ abstract class MemoryDao {
     @Query("SELECT * FROM raw_event")
     abstract suspend fun allRaw(): List<RawEventEntity>
 
+    @Query("SELECT * FROM raw_event WHERE graph_id = :graphId AND id IN (:ids)")
+    abstract suspend fun rawByIds(graphId: String, ids: List<String>): List<RawEventEntity>
+
     @Query("UPDATE raw_event SET consumed = 1 WHERE graph_id = :graphId AND id = :id")
     abstract suspend fun markConsumed(graphId: String, id: String)
 
@@ -67,6 +72,26 @@ abstract class MemoryDao {
 
     @Query("SELECT * FROM claim_log WHERE id IN (:ids)")
     abstract suspend fun claimsByIds(ids: List<String>): List<ClaimLogEntity>
+
+    @Query(
+        """
+        SELECT * FROM claim_log
+        WHERE id IN (:ids) AND graph_id = :graphId AND (
+          (scope = 'PROFILE' AND state = 'CONFIRMED') OR
+          (scope = 'TASK' AND (
+            (:allowCrossTask = 1) OR (scope_id = :taskScopeId AND :taskScopeId != '')
+          )) OR
+          (scope = 'SESSION' AND scope_id = :sessionId AND :sessionId != '')
+        )
+        """,
+    )
+    abstract suspend fun recallClaimsByIds(
+        ids: List<String>,
+        graphId: String,
+        sessionId: String,
+        taskScopeId: String,
+        allowCrossTask: Int,
+    ): List<ClaimLogEntity>
 
     @Query("SELECT * FROM claim_log WHERE graph_id = :graphId ORDER BY created_at DESC")
     abstract suspend fun claims(graphId: String): List<ClaimLogEntity>
@@ -142,11 +167,18 @@ abstract class MemoryDao {
 
     @Query(
         """
-        UPDATE edge SET confidence = :confidence, updated_at = :updatedAt, provenance = :provenance
+        UPDATE edge SET confidence = :confidence, updated_at = :updatedAt, provenance = :provenance,
+          state = :state
         WHERE id = :id
         """,
     )
-    abstract suspend fun touchEdge(id: String, confidence: Double, updatedAt: Long, provenance: String)
+    abstract suspend fun touchEdge(
+        id: String,
+        confidence: Double,
+        updatedAt: Long,
+        provenance: String,
+        state: MemoryState,
+    )
 
     @Query(
         """
@@ -186,16 +218,48 @@ abstract class MemoryDao {
 
     @Query(
         """
+        SELECT * FROM edge WHERE graph_id = :graphId
+          AND created_at <= :at AND (expired_at IS NULL OR expired_at > :at)
+          AND valid_at <= :at AND (invalid_at IS NULL OR invalid_at > :at)
+          AND (
+            (scope = 'PROFILE' AND state = 'CONFIRMED') OR
+            (scope = 'TASK' AND (
+              (:allowCrossTask = 1) OR (scope_id = :taskScopeId AND :taskScopeId != '')
+            )) OR
+            (scope = 'SESSION' AND scope_id = :sessionId AND :sessionId != '')
+          )
+        """,
+    )
+    abstract suspend fun recallEdges(
+        graphId: String,
+        at: Long,
+        sessionId: String,
+        taskScopeId: String,
+        allowCrossTask: Int,
+    ): List<EdgeEntity>
+
+    @Query(
+        """
         SELECT * FROM edge WHERE graph_id = :graphId AND src = :src AND relation = :relation AND dst != :dst
+          AND scope = :scope AND scope_id = :scopeId
           AND created_at <= :at AND (expired_at IS NULL OR expired_at > :at)
           AND valid_at <= :at AND (invalid_at IS NULL OR invalid_at > :at)
         """,
     )
-    abstract suspend fun superseded(graphId: String, src: String, relation: String, dst: String, at: Long): List<EdgeEntity>
+    abstract suspend fun superseded(
+        graphId: String,
+        src: String,
+        relation: String,
+        dst: String,
+        at: Long,
+        scope: MemoryScope,
+        scopeId: String,
+    ): List<EdgeEntity>
 
     @Query(
         """
         SELECT * FROM edge WHERE graph_id = :graphId AND src = :src AND dst = :dst AND relation = :relation
+          AND scope = :scope AND scope_id = :scopeId
           AND created_at <= :at AND (expired_at IS NULL OR expired_at > :at)
           AND valid_at <= :at AND (invalid_at IS NULL OR invalid_at > :at)
         """,
@@ -206,15 +270,25 @@ abstract class MemoryDao {
         dst: String,
         relation: String,
         at: Long,
+        scope: MemoryScope,
+        scopeId: String,
     ): EdgeEntity?
 
     @Query(
         """
         SELECT * FROM edge
-        WHERE graph_id = :graphId AND src = :src AND dst = :dst AND relation = :relation AND expired_at IS NULL
+        WHERE graph_id = :graphId AND src = :src AND dst = :dst AND relation = :relation
+          AND scope = :scope AND scope_id = :scopeId AND expired_at IS NULL
         """,
     )
-    abstract suspend fun openTriple(graphId: String, src: String, dst: String, relation: String): List<EdgeEntity>
+    abstract suspend fun openTriple(
+        graphId: String,
+        src: String,
+        dst: String,
+        relation: String,
+        scope: MemoryScope,
+        scopeId: String,
+    ): List<EdgeEntity>
 
     @Query(
         """

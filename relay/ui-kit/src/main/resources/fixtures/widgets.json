@@ -1,0 +1,12 @@
+[
+  {"type":"markdown","version":1,"markdown":"## 今日\n完成 **Relay** 合同。"},
+  {"type":"kv","version":1,"title":"运行状态","items":[{"key":"环境","value":"端侧"},{"key":"状态","value":"正常"}]},
+  {"type":"table","version":1,"title":"任务","columns":["名称","状态"],"rows":[["合同","完成"],["预览","进行中"]]},
+  {"type":"chart","version":1,"title":"每周调用","kind":"BAR","points":[{"label":"一","value":12},{"label":"二","value":18}]},
+  {"type":"chart","version":1,"title":"渠道收入","stacked":true,"startAxisTitle":"万元","series":[{"name":"订阅","kind":"BAR","points":[{"label":"Q1","value":18},{"label":"Q2","value":24}]},{"name":"服务","kind":"BAR","points":[{"label":"Q1","value":7},{"label":"Q2","value":9}]}]},
+  {"type":"chart","version":1,"title":"收入与转化率","startAxisTitle":"万元","endAxisTitle":"%","series":[{"name":"收入","kind":"BAR","points":[{"label":"Q1","value":25},{"label":"Q2","value":33}]},{"name":"转化率","kind":"LINE","axis":"END","points":[{"label":"Q1","value":12.5},{"label":"Q2","value":16.2}]}],"annotations":[{"label":"活动上线","pointLabel":"Q2","value":16.2,"axis":"END"}]},
+  {"type":"graph","version":1,"title":"记忆","nodes":[{"id":"relay","label":"Relay"},{"id":"android","label":"Android"}],"edges":[{"source":"relay","predicate":"运行于","target":"android"}]},
+  {"type":"file","version":1,"artifactId":"fixture","artifactVersion":1,"name":"demo.html","mime":"text/html","summaryText":"演示产物"},
+  {"type":"list","version":1,"title":"下一步","items":["验证","发布"]},
+  {"type":"image","version":1,"uri":"data:image/png;base64,","alt":"示例图片"}
+]

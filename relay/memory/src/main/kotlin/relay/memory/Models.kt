@@ -3,11 +3,35 @@ package relay.memory
 import kotlinx.serialization.Serializable
 import relay.llm.model.FinishReason
 
+@Serializable
+enum class MemoryScope {
+    PROFILE,
+    TASK,
+    SESSION,
+}
+
+@Serializable
+enum class MemoryState {
+    CANDIDATE,
+    CONFIRMED,
+}
+
+/**
+ * Scope boundary used by recall. Profile recall only exposes confirmed memory; task/session
+ * memory is visible only when its id matches this context.
+ */
+data class RecallContext(
+    val sessionId: String = "",
+    val taskScopeId: String = "",
+    val allowCrossTask: Boolean = false,
+)
+
 data class RawTurn(
     val graphId: String,
     val role: String,
     val text: String,
     val sessionId: String = "",
+    val taskScopeId: String = "",
     val source: String = "chat",
     val ts: Long = System.currentTimeMillis(),
 )
@@ -23,6 +47,7 @@ data class RawEvent(
     val source: String,
     val consumed: Boolean,
     val textRef: String = "",
+    val taskScopeId: String = "",
 )
 
 internal data class CleanTriple(
@@ -54,11 +79,15 @@ data class TripleDraft(
     val retract: Boolean = false,
     val validAt: Long? = null,
     val invalidAt: Long? = null,
+    val scope: MemoryScope? = null,
+    val state: MemoryState? = null,
+    val scopeId: String = "",
 )
 
 enum class ExtractOutcome {
     SUCCESS,
     SUCCESS_EMPTY,
+    LOW_YIELD,
     PARSE_FAILED,
     TRUNCATED,
     REJECTED,
@@ -70,6 +99,9 @@ data class ClaimDraft(
     val text: String,
     val rawEventIds: List<String> = emptyList(),
     val confidence: Double = 0.7,
+    val scope: MemoryScope? = null,
+    val state: MemoryState? = null,
+    val scopeId: String = "",
 )
 
 @Serializable
@@ -83,6 +115,9 @@ data class OpenClaim(
     val confidence: Double,
     val rawEventIds: List<String>,
     val createdAt: Long,
+    val scope: MemoryScope = MemoryScope.SESSION,
+    val state: MemoryState = MemoryState.CANDIDATE,
+    val scopeId: String = sessionId,
 )
 
 data class ExtractResult(
@@ -102,6 +137,7 @@ data class LearnBatch(
     val sessionId: String,
     val events: List<RawEvent>,
     val contextEvents: List<RawEvent> = emptyList(),
+    val taskScopeId: String = "",
 ) {
     val eventIds: List<String> get() = events.map { it.id }
     val contextEventIds: List<String> get() = contextEvents.map { it.id }
@@ -112,6 +148,9 @@ data class Fact(
     val p: String,
     val o: String,
     val edgeId: String = "",
+    val scope: MemoryScope = MemoryScope.PROFILE,
+    val state: MemoryState = MemoryState.CONFIRMED,
+    val scopeId: String = "",
 ) {
     fun line(): String = "- $s ${predicateLabel(p)} $o"
 }
@@ -156,6 +195,9 @@ internal data class EdgeRec(
     val invalidAt: Long?,
     val updatedAt: Long,
     val provenance: List<String>,
+    val scope: MemoryScope = MemoryScope.PROFILE,
+    val state: MemoryState = MemoryState.CONFIRMED,
+    val scopeId: String = "",
 )
 
 @Serializable
@@ -171,6 +213,9 @@ internal data class FactLogRec(
     val retract: Boolean = false,
     val validAt: Long = 0,
     val invalidAt: Long? = null,
+    val scope: MemoryScope = MemoryScope.PROFILE,
+    val state: MemoryState = MemoryState.CONFIRMED,
+    val scopeId: String = "",
 )
 
 @Serializable

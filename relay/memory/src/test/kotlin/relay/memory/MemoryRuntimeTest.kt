@@ -29,6 +29,34 @@ import relay.memory.extract.MemoryExtractor
 class MemoryRuntimeTest {
 
     @Test
+    fun emptyExtractOnAllergyLeavesQueue() = runTest {
+        val store = testStore()
+        store.capture(RawTurn(GRAPH_ASSISTANT, role = "user", text = "我花生过敏"))
+        val memory = MemoryRuntime(store, FixedExtractor(emptyList()))
+
+        val report = memory.learn(GRAPH_ASSISTANT)
+
+        assertEquals(ExtractOutcome.LOW_YIELD, report.outcome)
+        assertEquals(1, store.unconsumed(GRAPH_ASSISTANT).size)
+        assertTrue(store.facts(GRAPH_ASSISTANT).facts.isEmpty())
+    }
+
+    @Test
+    fun emptyExtractOnProjectFactsWritesClaim() = runTest {
+        val store = testStore()
+        val text = "我做过车管家，主界面有卡片引擎，云端下发卡片，车端渲染；详情页是 H5。"
+        store.capture(RawTurn(GRAPH_ASSISTANT, role = "user", text = text, sessionId = "s"))
+        val memory = MemoryRuntime(store, FixedExtractor(emptyList()))
+
+        val report = memory.learn(GRAPH_ASSISTANT, "s")
+
+        assertEquals(ExtractOutcome.SUCCESS, report.outcome)
+        assertEquals(1, store.claims(GRAPH_ASSISTANT).size)
+        assertTrue(store.claims(GRAPH_ASSISTANT).single().text.contains("车管家"))
+        assertTrue(store.unconsumed(GRAPH_ASSISTANT, "s").isEmpty())
+    }
+
+    @Test
     fun emptyDraftConsumesIdleChat() = runTest {
         val store = testStore()
         val id = store.capture(RawTurn(GRAPH_ASSISTANT, role = "user", text = "今天天气怎么样"))
@@ -81,6 +109,54 @@ class MemoryRuntimeTest {
         assertEquals("unknown predicate", report.errors.single().reason)
         assertTrue(store.facts(GRAPH_ASSISTANT).facts.any { it.p == "allergic_to" && it.o == "花生" })
         assertTrue(store.unconsumed(GRAPH_ASSISTANT).isEmpty())
+    }
+
+    @Test
+    fun rawTurnTaskScopeFlowsThroughLearningAndRecall() = runTest {
+        val store = testStore()
+        val id = store.capture(
+            RawTurn(
+                GRAPH_ASSISTANT,
+                role = "user",
+                text = "我在研究安卓开发",
+                sessionId = "session-a",
+                taskScopeId = "research:android",
+            ),
+        )
+        val memory = MemoryRuntime(
+            store,
+            FixedExtractor(
+                listOf(
+                    TripleDraft(
+                        GRAPH_ASSISTANT,
+                        "用户",
+                        "worked_on",
+                        "安卓开发",
+                        rawEventIds = listOf(id),
+                    ),
+                ),
+            ),
+        )
+
+        memory.learn(GRAPH_ASSISTANT, "session-a")
+
+        val fact = store.facts(GRAPH_ASSISTANT).facts.single()
+        assertEquals(MemoryScope.TASK, fact.scope)
+        assertEquals("research:android", fact.scopeId)
+        assertFalse(
+            store.query(
+                GRAPH_ASSISTANT,
+                "安卓开发",
+                RecallContext(taskScopeId = "research:android"),
+            ).isEmpty,
+        )
+        assertTrue(
+            store.query(
+                GRAPH_ASSISTANT,
+                "安卓开发",
+                RecallContext(taskScopeId = "research:kotlin"),
+            ).isEmpty,
+        )
     }
 
     @Test

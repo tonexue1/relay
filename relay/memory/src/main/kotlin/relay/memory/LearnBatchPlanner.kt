@@ -53,6 +53,7 @@ class LearnBatchPlanner(
             sessionId = batchSession,
             events = selected,
             contextEvents = context,
+            taskScopeId = selected.firstNotNullOfOrNull { it.taskScopeId.takeIf(String::isNotBlank) }.orEmpty(),
         )
     }
 }

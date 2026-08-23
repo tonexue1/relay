@@ -20,6 +20,7 @@ import relay.agent.Tool
 import relay.memory.IngestError
 import relay.memory.MemoryHit
 import relay.memory.MemoryStore
+import relay.memory.RecallContext
 import relay.memory.ReviewItem
 import relay.memory.TripleDraft
 
@@ -37,8 +38,12 @@ val MEMORY_NIGHT_TOOLS: Set<String> = setOf(
     "memory_ingest",
 )
 
-fun MemoryStore.dayTools(graphId: String): List<Tool> =
-    graphTools(graphId).filter { it.def.name in MEMORY_DAY_TOOLS }
+fun MemoryStore.dayTools(graphId: String): List<Tool> = dayTools(graphId, RecallContext())
+
+fun MemoryStore.dayTools(graphId: String, context: RecallContext): List<Tool> = listOf(
+    queryTool(graphId, context),
+    factsTool(graphId, context),
+)
 
 fun MemoryStore.nightTools(graphId: String): List<Tool> =
     graphTools(graphId).filter { it.def.name in MEMORY_NIGHT_TOOLS }
@@ -98,7 +103,7 @@ private fun MemoryStore.ingestTool(graphId: String): Tool = FunTool(
     ingest(drafts).errors.toIngestJson()
 }
 
-private fun MemoryStore.queryTool(graphId: String): Tool = FunTool(
+private fun MemoryStore.queryTool(graphId: String, context: RecallContext? = null): Tool = FunTool(
     name = "memory_query",
     description = "Literal FTS plus one hop. Query words that exist in the graph (花生), not hints (火锅).",
     parameters = buildJsonObject {
@@ -111,14 +116,15 @@ private fun MemoryStore.queryTool(graphId: String): Tool = FunTool(
     },
 ) { args ->
     val obj = args.obj()
-    query(
-        graphId = graphId,
-        text = obj.str("text"),
-        budgetChars = obj["budget_chars"]?.jsonPrimitive?.longOrNull?.toInt() ?: 2000,
-    ).toToolJson()
+    val budget = obj["budget_chars"]?.jsonPrimitive?.longOrNull?.toInt() ?: 2000
+    if (context == null) {
+        query(graphId = graphId, text = obj.str("text"), budgetChars = budget)
+    } else {
+        query(graphId = graphId, text = obj.str("text"), context = context, budgetChars = budget)
+    }.toToolJson()
 }
 
-private fun MemoryStore.factsTool(graphId: String): Tool = FunTool(
+private fun MemoryStore.factsTool(graphId: String, context: RecallContext? = null): Tool = FunTool(
     name = "memory_facts",
     description = "Live edges at optional at (epoch ms). Filter by p and/or node name.",
     parameters = buildJsonObject {
@@ -131,12 +137,14 @@ private fun MemoryStore.factsTool(graphId: String): Tool = FunTool(
     },
 ) { args ->
     val obj = args.obj()
-    facts(
-        graphId = graphId,
-        at = obj["at"]?.jsonPrimitive?.longOrNull ?: System.currentTimeMillis(),
-        p = obj["p"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
-        node = obj["node"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
-    ).toToolJson()
+    val at = obj["at"]?.jsonPrimitive?.longOrNull ?: System.currentTimeMillis()
+    val p = obj["p"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+    val node = obj["node"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+    if (context == null) {
+        facts(graphId = graphId, at = at, p = p, node = node)
+    } else {
+        facts(graphId = graphId, context = context, at = at, p = p, node = node)
+    }.toToolJson()
 }
 
 private fun MemoryStore.recentTool(graphId: String): Tool = FunTool(

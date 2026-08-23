@@ -19,11 +19,15 @@ import relay.memory.ClaimDraft
 import relay.memory.IngestError
 import relay.memory.IngestResult
 import relay.memory.MemoryHit
+import relay.memory.MemoryClassifier
+import relay.memory.MemoryScope
+import relay.memory.MemoryState
 import relay.memory.MemoryStore
 import relay.memory.NodeRec
 import relay.memory.OpenClaim
 import relay.memory.RawEvent
 import relay.memory.RawTurn
+import relay.memory.RecallContext
 import relay.memory.ReviewItem
 import relay.memory.Snapshot
 import relay.memory.TripleDraft
@@ -55,6 +59,7 @@ open class SqliteMemoryStore(
                     graphId = turn.graphId,
                     ts = turn.ts,
                     sessionId = turn.sessionId,
+                    taskScopeId = turn.taskScopeId,
                     role = turn.role,
                     textRef = textRef,
                     source = turn.source,
@@ -84,24 +89,17 @@ open class SqliteMemoryStore(
         budgetChars: Int,
     ): List<OpenClaim> = lock.withLock {
         requireGraph(graphId)
-        val match = ftsMatch(queryTokens(text), normalizeText(text)) ?: return@withLock emptyList()
-        dao.withTx {
-            val ids = claimFtsIds(match, graphId).map { it.claimId }.distinct()
-            if (ids.isEmpty()) return@withTx emptyList()
-            val ranked = claimsByIds(ids)
-                .map { it.toModel() }
-                .distinctBy { normalizeText(it.text) }
-                .sortedByDescending { claimScore(it) }
-            val result = mutableListOf<OpenClaim>()
-            var used = 0
-            for (claim in ranked) {
-                val size = claim.text.length + claim.subject.length + 3
-                if (result.isNotEmpty() && used + size > budgetChars) break
-                result += claim
-                used += size
-            }
-            result
-        }
+        dao.withTx { queryClaimsLocked(graphId, text, null, budgetChars) }
+    }
+
+    override suspend fun queryClaims(
+        graphId: String,
+        text: String,
+        context: RecallContext,
+        budgetChars: Int,
+    ): List<OpenClaim> = lock.withLock {
+        requireGraph(graphId)
+        dao.withTx { queryClaimsLocked(graphId, text, context, budgetChars) }
     }
 
     override suspend fun claims(graphId: String): List<OpenClaim> = lock.withLock {
@@ -163,6 +161,7 @@ open class SqliteMemoryStore(
         drafts: List<TripleDraft>,
         outcome: ExtractOutcome,
         rawResponse: String,
+        taskScopeId: String,
     ): IngestResult = lock.withLock {
         requireGraph(graphId)
         require(outcome == ExtractOutcome.SUCCESS || outcome == ExtractOutcome.SUCCESS_EMPTY)
@@ -170,7 +169,7 @@ open class SqliteMemoryStore(
         val now = System.currentTimeMillis()
         dao.withTx {
             insertClaimDrafts(sessionId, runId, claims, now)
-            val result = ingestDrafts(drafts)
+            val result = ingestDrafts(drafts, sessionId, taskScopeId)
             markConsumedIds(graphId, eventIds)
             finishExtractionRun(
                 id = runId,
@@ -190,32 +189,18 @@ open class SqliteMemoryStore(
         at: Long,
     ): MemoryHit = lock.withLock {
         requireGraph(graphId)
-        val tokens = queryTokens(text)
-        if (tokens.isEmpty() && text.isBlank()) return@withLock MemoryHit()
-        dao.withTx {
-            val qn = normalizeText(text)
-            val nodeIds = matchNodes(graphId, tokens, qn)
-            val predicateHits = graphPredicates(graphId).filter { pred ->
-                val label = nfkcCompact(predicateLabel(pred))
-                label.isNotEmpty() && label in qn
-            }
-            val edges = validEdges(graphId, at).map { it.toRec() }.filter { edge ->
-                edge.srcId in nodeIds ||
-                    edge.dstId in nodeIds ||
-                    edge.relation in predicateHits
-            }
-            val ranked = edges.sortedByDescending { score(it) }
-            val facts = mutableListOf<Fact>()
-            var used = 0
-            for (edge in ranked) {
-                val fact = toFact(edge)
-                val line = fact.line()
-                if (facts.isNotEmpty() && used + line.length + 1 > budgetChars) break
-                facts += fact
-                used += line.length + 1
-            }
-            MemoryHit(facts)
-        }
+        dao.withTx { queryLocked(graphId, text, null, budgetChars, at) }
+    }
+
+    override suspend fun query(
+        graphId: String,
+        text: String,
+        context: RecallContext,
+        budgetChars: Int,
+        at: Long,
+    ): MemoryHit = lock.withLock {
+        requireGraph(graphId)
+        dao.withTx { queryLocked(graphId, text, context, budgetChars, at) }
     }
 
     override suspend fun forget(graphId: String, now: Long) = lock.withLock {
@@ -255,6 +240,7 @@ open class SqliteMemoryStore(
                 val triple = CleanTriple(row.s, row.p, row.o, retract = row.retract != 0)
                 val ts = row.ts
                 val validAt = row.validAt.takeIf { it > 0 } ?: ts
+                val classification = MemoryClassifier.Classification(row.scope, row.state, row.scopeId)
                 if (triple.retract) {
                     retractOne(
                         graphId,
@@ -264,6 +250,7 @@ open class SqliteMemoryStore(
                         log = false,
                         at = ts,
                         invalidAt = row.invalidAt,
+                        classification = classification,
                     )
                 } else {
                     ingestOne(
@@ -275,6 +262,7 @@ open class SqliteMemoryStore(
                         at = ts,
                         validAt = validAt,
                         invalidAt = row.invalidAt,
+                        classification = classification,
                     )
                 }
             }
@@ -330,6 +318,32 @@ open class SqliteMemoryStore(
         }
     }
 
+    override suspend fun facts(
+        graphId: String,
+        context: RecallContext,
+        at: Long,
+        p: String?,
+        node: String?,
+    ): MemoryHit = lock.withLock {
+        requireGraph(graphId)
+        dao.withTx {
+            val wantNode = node?.let { normalizeText(it) }?.takeIf { it.isNotEmpty() }
+            val edges = recallEdges(
+                graphId,
+                at,
+                context.sessionId,
+                context.taskScopeId,
+                if (context.allowCrossTask) 1 else 0,
+            ).map { it.toRec() }
+                .filter { edge ->
+                    (p == null || edge.relation == p) &&
+                        (wantNode == null || nameOf(edge.srcId) == wantNode || nameOf(edge.dstId) == wantNode)
+                }
+                .sortedByDescending { it.updatedAt }
+            MemoryHit(edges.map { toFact(it) })
+        }
+    }
+
     override suspend fun recent(graphId: String, since: Long): MemoryHit = lock.withLock {
         requireGraph(graphId)
         dao.withTx {
@@ -366,7 +380,15 @@ open class SqliteMemoryStore(
                 val newSrc = if (edge.srcId == dropId) keepId else edge.srcId
                 val newDst = if (edge.dstId == dropId) keepId else edge.dstId
                 if (newSrc == newDst) continue
-                if (liveTriple(graphId, newSrc, newDst, edge.relation, now) != null) continue
+                if (liveTriple(
+                    graphId,
+                    newSrc,
+                    newDst,
+                    edge.relation,
+                    now,
+                    edge.scope,
+                    edge.scopeId,
+                ) != null) continue
                 val edgeId = newId()
                 insertEdge(
                     EdgeEntity(
@@ -382,6 +404,9 @@ open class SqliteMemoryStore(
                         invalidAt = edge.invalidAt,
                         updatedAt = now,
                         provenance = encodeIds(edge.provenance),
+                        scope = edge.scope,
+                        state = edge.state,
+                        scopeId = edge.scopeId,
                     ),
                 )
                 insertFact(
@@ -397,6 +422,9 @@ open class SqliteMemoryStore(
                         retract = 0,
                         validAt = edge.validAt,
                         invalidAt = edge.invalidAt,
+                        scope = edge.scope,
+                        state = edge.state,
+                        scopeId = edge.scopeId,
                     ),
                 )
             }
@@ -417,6 +445,7 @@ open class SqliteMemoryStore(
                         FactLogRec(
                             it.id, it.graphId, it.ts, it.s, it.p, it.o, it.confidence,
                             decodeIds(it.rawEventIds), it.retract != 0, it.validAt, it.invalidAt,
+                            it.scope, it.state, it.scopeId,
                         )
                     },
                     reviews = allReviews().map {
@@ -476,6 +505,9 @@ open class SqliteMemoryStore(
                         invalidAt = edge.invalidAt,
                         updatedAt = edge.updatedAt,
                         provenance = encodeIds(edge.provenance),
+                        scope = edge.scope,
+                        state = edge.state,
+                        scopeId = edge.scopeId,
                     ),
                 )
             }
@@ -487,6 +519,7 @@ open class SqliteMemoryStore(
                         graphId = event.graphId,
                         ts = event.ts,
                         sessionId = event.sessionId,
+                        taskScopeId = event.taskScopeId,
                         role = event.role,
                         textRef = textRef,
                         source = event.source,
@@ -508,6 +541,9 @@ open class SqliteMemoryStore(
                         retract = if (row.retract) 1 else 0,
                         validAt = row.validAt,
                         invalidAt = row.invalidAt,
+                        scope = row.scope,
+                        state = row.state,
+                        scopeId = row.scopeId,
                     ),
                 )
             }
@@ -527,6 +563,9 @@ open class SqliteMemoryStore(
                     confidence = claim.confidence,
                     rawEventIds = encodeIds(claim.rawEventIds),
                     createdAt = claim.createdAt,
+                    scope = claim.scope,
+                    state = claim.state,
+                    scopeId = claim.scopeId,
                 )
                 insertClaim(row)
                 insertClaimFts(
@@ -567,6 +606,11 @@ open class SqliteMemoryStore(
         requireGraph(draft.graphId)
         require(draft.subject.isNotBlank()) { "claim subject required" }
         require(draft.text.isNotBlank()) { "claim text required" }
+        val classification = MemoryClassifier.claim(
+            draft,
+            sessionId,
+            assistantOnly = isAssistantOnly(draft.graphId, draft.rawEventIds),
+        )
         val row = ClaimLogEntity(
             id = newId(),
             graphId = draft.graphId,
@@ -577,6 +621,9 @@ open class SqliteMemoryStore(
             confidence = draft.confidence,
             rawEventIds = encodeIds(draft.rawEventIds),
             createdAt = now,
+            scope = classification.scope,
+            state = classification.state,
+            scopeId = classification.scopeId,
         )
         insertClaim(row)
         insertClaimFts(
@@ -588,7 +635,11 @@ open class SqliteMemoryStore(
         row.toModel()
     }
 
-    private suspend fun MemoryDao.ingestDrafts(drafts: List<TripleDraft>): IngestResult {
+    private suspend fun MemoryDao.ingestDrafts(
+        drafts: List<TripleDraft>,
+        sessionId: String = "",
+        taskScopeId: String = "",
+    ): IngestResult {
         val errors = mutableListOf<IngestError>()
         for (draft in drafts) {
             requireGraph(draft.graphId)
@@ -602,8 +653,21 @@ open class SqliteMemoryStore(
                 errors += IngestError(draft.graphId, draft.s, draft.p, draft.o, reason)
                 continue
             }
+            val classification = MemoryClassifier.triple(
+                draft,
+                sessionId = sessionId,
+                taskScopeId = taskScopeId,
+                assistantOnly = isAssistantOnly(draft.graphId, draft.rawEventIds),
+            )
             if (triple.retract) {
-                retractOne(draft.graphId, triple, draft.rawEventIds, draft.confidence, invalidAt = draft.invalidAt)
+                retractOne(
+                    draft.graphId,
+                    triple,
+                    draft.rawEventIds,
+                    draft.confidence,
+                    invalidAt = draft.invalidAt,
+                    classification = classification,
+                )
             } else {
                 ingestOne(
                     draft.graphId,
@@ -612,6 +676,7 @@ open class SqliteMemoryStore(
                     draft.confidence,
                     validAt = draft.validAt,
                     invalidAt = draft.invalidAt,
+                    classification = classification,
                 )
             }
             if (draft.rawEventIds.isNotEmpty()) {
@@ -630,23 +695,52 @@ open class SqliteMemoryStore(
         at: Long = System.currentTimeMillis(),
         validAt: Long? = null,
         invalidAt: Long? = null,
+        classification: MemoryClassifier.Classification,
     ) {
         val srcId = resolveNode(graphId, triple.s)
         val dstId = resolveNode(graphId, triple.o)
         val worldStart = validAt ?: at
         var superseded = false
         if (triple.p in graphFunctionalPredicates(graphId)) {
-            for (old in superseded(graphId, srcId, triple.p, dstId, at)) {
+            for (old in superseded(
+                graphId,
+                srcId,
+                triple.p,
+                dstId,
+                at,
+                classification.scope,
+                classification.scopeId,
+            )) {
                 archiveWorld(old.id, at, worldStart)
                 superseded = true
             }
         }
-        val existing = liveTriple(graphId, srcId, dstId, triple.p, at)
+        val existing = liveTriple(
+            graphId,
+            srcId,
+            dstId,
+            triple.p,
+            at,
+            classification.scope,
+            classification.scopeId,
+        )
         val edgeId: String
         if (existing != null) {
             edgeId = existing.id
             val provenance = (decodeIds(existing.provenance) + rawEventIds).distinct()
-            touchEdge(edgeId, maxOf(existing.confidence, confidence), at, encodeIds(provenance))
+            val state = if (
+                existing.state == MemoryState.CONFIRMED || classification.state == MemoryState.CONFIRMED
+            ) {
+                MemoryState.CONFIRMED
+            } else if (
+                classification.scope == MemoryScope.PROFILE &&
+                rawByIds(graphId, provenance).count { it.role.equals("user", ignoreCase = true) } >= 2
+            ) {
+                MemoryState.CONFIRMED
+            } else {
+                MemoryState.CANDIDATE
+            }
+            touchEdge(edgeId, maxOf(existing.confidence, confidence), at, encodeIds(provenance), state)
         } else {
             edgeId = newId()
             insertEdge(
@@ -663,6 +757,9 @@ open class SqliteMemoryStore(
                     invalidAt = invalidAt,
                     updatedAt = at,
                     provenance = encodeIds(rawEventIds),
+                    scope = classification.scope,
+                    state = classification.state,
+                    scopeId = classification.scopeId,
                 ),
             )
         }
@@ -680,6 +777,9 @@ open class SqliteMemoryStore(
                     retract = 0,
                     validAt = worldStart,
                     invalidAt = invalidAt,
+                    scope = classification.scope,
+                    state = classification.state,
+                    scopeId = classification.scopeId,
                 ),
             )
         }
@@ -697,12 +797,20 @@ open class SqliteMemoryStore(
         log: Boolean = true,
         at: Long = System.currentTimeMillis(),
         invalidAt: Long? = null,
+        classification: MemoryClassifier.Classification,
     ) {
         val worldEnd = invalidAt ?: at
         val srcId = nodeByName(graphId, normalizeText(triple.s))?.id
         val dstId = nodeByName(graphId, normalizeText(triple.o))?.id
         if (srcId != null && dstId != null) {
-            for (edge in openTriple(graphId, srcId, dstId, triple.p)) {
+            for (edge in openTriple(
+                graphId,
+                srcId,
+                dstId,
+                triple.p,
+                classification.scope,
+                classification.scopeId,
+            )) {
                 archiveWorld(edge.id, at, worldEnd)
             }
         }
@@ -720,6 +828,9 @@ open class SqliteMemoryStore(
                     retract = 1,
                     validAt = at,
                     invalidAt = worldEnd,
+                    scope = classification.scope,
+                    state = classification.state,
+                    scopeId = classification.scopeId,
                 ),
             )
         }
@@ -751,9 +862,98 @@ open class SqliteMemoryStore(
         return id
     }
 
+    private suspend fun MemoryDao.queryLocked(
+        graphId: String,
+        text: String,
+        context: RecallContext?,
+        budgetChars: Int,
+        at: Long,
+    ): MemoryHit {
+        val tokens = queryTokens(text)
+        if (tokens.isEmpty() && text.isBlank()) return MemoryHit()
+        val qn = normalizeText(text)
+        val nodeIds = matchNodes(graphId, tokens, qn)
+        val predicateHits = graphPredicates(graphId).filter { pred ->
+            val label = nfkcCompact(predicateLabel(pred))
+            label.isNotEmpty() && qn == label
+        }
+        val rows = if (context == null) {
+            validEdges(graphId, at)
+        } else {
+            recallEdges(
+                graphId,
+                at,
+                context.sessionId,
+                context.taskScopeId,
+                if (context.allowCrossTask) 1 else 0,
+            )
+        }
+        val ranked = rows.map { it.toRec() }
+            .filter { edge ->
+                edge.srcId in nodeIds ||
+                    edge.dstId in nodeIds ||
+                    edge.relation in predicateHits
+            }
+            .sortedByDescending { score(it) }
+        val facts = mutableListOf<Fact>()
+        var used = 0
+        for (edge in ranked) {
+            val fact = toFact(edge)
+            val line = fact.line()
+            if (facts.isNotEmpty() && used + line.length + 1 > budgetChars) break
+            facts += fact
+            used += line.length + 1
+        }
+        return MemoryHit(facts)
+    }
+
+    private suspend fun MemoryDao.queryClaimsLocked(
+        graphId: String,
+        text: String,
+        context: RecallContext?,
+        budgetChars: Int,
+    ): List<OpenClaim> {
+        val qn = normalizeText(text)
+        val match = ftsMatch(queryTokens(text), qn) ?: return emptyList()
+        val ids = claimFtsIds(match, graphId).map { it.claimId }.distinct()
+        if (ids.isEmpty()) return emptyList()
+        val rows = if (context == null) {
+            claimsByIds(ids)
+        } else {
+            recallClaimsByIds(
+                ids,
+                graphId,
+                context.sessionId,
+                context.taskScopeId,
+                if (context.allowCrossTask) 1 else 0,
+            )
+        }
+        val ranked = rows
+            .map { it.toModel() }
+            .filter { claim -> claimLiteralMatch(qn, claim) }
+            .distinctBy { normalizeText(it.text) }
+            .sortedByDescending { claimScore(it) }
+        val result = mutableListOf<OpenClaim>()
+        var used = 0
+        for (claim in ranked) {
+            val size = claim.text.length + claim.subject.length + 3
+            if (result.isNotEmpty() && used + size > budgetChars) break
+            result += claim
+            used += size
+        }
+        return result
+    }
+
     private suspend fun MemoryDao.matchNodes(graphId: String, tokens: Set<String>, qn: String): Set<String> {
         val match = ftsMatch(tokens, qn) ?: return emptySet()
-        return ftsNodeIds(match, graphId).map { it.nodeId }.toSet()
+        return ftsNodeIds(match, graphId)
+            .map { it.nodeId }
+            .distinct()
+            .filter { nodeId ->
+                val canonical = nodeById(nodeId)?.canonicalName.orEmpty()
+                literalEntityMatch(qn, listOf(canonical) + aliasesOf(graphId, nodeId))
+            }
+            .toSet()
     }
 
     private fun ftsMatch(tokens: Set<String>, qn: String): String? {
@@ -763,6 +963,34 @@ open class SqliteMemoryStore(
             val safe = token.replace("\"", "").replace("*", "")
             "\"$safe\""
         }
+    }
+
+    private fun literalEntityMatch(query: String, names: List<String>): Boolean {
+        if (query.isBlank()) return false
+        return names.any { rawName ->
+            val name = normalizeText(rawName)
+            if (name.length < 2) return@any query == name
+            if (query == name || name in query) return@any true
+            tokenCoverage(query, name) >= 2
+        }
+    }
+
+    private fun claimLiteralMatch(query: String, claim: OpenClaim): Boolean {
+        val document = normalizeText("${claim.subject} ${claim.text}")
+        if (query.length >= 3 && query in document) return true
+        return tokenCoverage(query, document) >= 2
+    }
+
+    private fun tokenCoverage(query: String, document: String): Int {
+        val queryParts = queryTokens(query).filter { it.length in 2..3 && it != query }.toSet()
+        val documentParts = queryTokens(document).filter { it.length in 2..3 && it != document }.toSet()
+        return queryParts.intersect(documentParts).size
+    }
+
+    private suspend fun MemoryDao.isAssistantOnly(graphId: String, ids: List<String>): Boolean {
+        if (ids.isEmpty()) return false
+        val rows = rawByIds(graphId, ids)
+        return rows.isNotEmpty() && rows.none { it.role.equals("user", ignoreCase = true) }
     }
 
     private suspend fun MemoryDao.refreshFts(graphId: String, nodeId: String, canonical: String) {
@@ -776,6 +1004,9 @@ open class SqliteMemoryStore(
         p = edge.relation,
         o = nameOf(edge.dstId),
         edgeId = edge.id,
+        scope = edge.scope,
+        state = edge.state,
+        scopeId = edge.scopeId,
     )
 
     private suspend fun MemoryDao.nameOf(nodeId: String): String =
@@ -790,6 +1021,7 @@ open class SqliteMemoryStore(
         graphId = graphId,
         ts = ts,
         sessionId = sessionId,
+        taskScopeId = taskScopeId,
         role = role,
         text = artifacts.get(textRef).orEmpty(),
         source = source,
@@ -807,6 +1039,9 @@ open class SqliteMemoryStore(
         confidence = confidence,
         rawEventIds = decodeIds(rawEventIds),
         createdAt = createdAt,
+        scope = scope,
+        state = state,
+        scopeId = scopeId,
     )
 
     private fun claimScore(claim: OpenClaim): Double {
@@ -851,6 +1086,9 @@ internal fun EdgeEntity.toRec(): EdgeRec = EdgeRec(
     invalidAt = invalidAt,
     updatedAt = updatedAt,
     provenance = decodeIds(provenance),
+    scope = scope,
+    state = state,
+    scopeId = scopeId,
 )
 
 internal fun encodeIds(ids: List<String>): String = Json.encodeToString(ids)

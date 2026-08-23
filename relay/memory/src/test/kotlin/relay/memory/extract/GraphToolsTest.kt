@@ -12,6 +12,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import relay.memory.GRAPH_ASSISTANT
+import relay.memory.MemoryScope
+import relay.memory.RecallContext
+import relay.memory.TripleDraft
 import relay.memory.agent.dayTools
 import relay.memory.agent.graphTools
 import relay.memory.agent.nightTools
@@ -94,5 +97,47 @@ class GraphToolsTest {
             tools.getValue("memory_facts").execute("c5", """{"p":"plans"}"""),
         ).jsonObject["facts"]!!.jsonArray
         assertEquals(listOf("跳槽"), live.map { it.jsonObject["o"]!!.jsonPrimitive.content })
+    }
+
+    @Test
+    fun dayToolsBindTaskScopeAndRequireHostPermissionForCrossTask() = runTest {
+        val store = testStore()
+        store.ingest(
+            listOf(
+                TripleDraft(
+                    GRAPH_ASSISTANT,
+                    "用户",
+                    "plans",
+                    "上海面试",
+                    scope = MemoryScope.TASK,
+                    scopeId = "task-a",
+                ),
+                TripleDraft(
+                    GRAPH_ASSISTANT,
+                    "用户",
+                    "plans",
+                    "北京面试",
+                    scope = MemoryScope.TASK,
+                    scopeId = "task-b",
+                ),
+            ),
+        )
+        val current = store.dayTools(
+            GRAPH_ASSISTANT,
+            RecallContext(taskScopeId = "task-a"),
+        ).single { it.def.name == "memory_query" }
+        val hidden = Json.parseToJsonElement(
+            current.execute("c1", """{"text":"北京面试"}"""),
+        ).jsonObject["facts"]!!.jsonArray
+        assertTrue(hidden.isEmpty())
+
+        val crossTask = store.dayTools(
+            GRAPH_ASSISTANT,
+            RecallContext(taskScopeId = "task-a", allowCrossTask = true),
+        ).single { it.def.name == "memory_query" }
+        val visible = Json.parseToJsonElement(
+            crossTask.execute("c2", """{"text":"北京面试"}"""),
+        ).jsonObject["facts"]!!.jsonArray
+        assertEquals(1, visible.size)
     }
 }
