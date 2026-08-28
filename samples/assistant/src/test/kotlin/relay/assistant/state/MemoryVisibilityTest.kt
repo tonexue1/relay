@@ -5,8 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import relay.memory.MemoryScope
-import relay.memory.MemoryState
 import relay.memory.RecallContext
+import relay.memory.api.LifecycleState
 
 class MemoryVisibilityTest {
     private val current = RecallContext(sessionId = "session-a", taskScopeId = "task-a")
@@ -14,30 +14,30 @@ class MemoryVisibilityTest {
     @Test
     fun `confirmed profile is recallable in any chat`() {
         assertTrue(
-            MemoryVisibility.recallable(MemoryScope.PROFILE, MemoryState.CONFIRMED, "", current),
+            MemoryVisibility.recallable(MemoryScope.PROFILE, LifecycleState.ACTIVE, "", current),
         )
         assertFalse(MemoryVisibility.isolated(MemoryScope.PROFILE, "", current))
-        assertEquals("资料 · 已确认", MemoryVisibility.label(MemoryScope.PROFILE, MemoryState.CONFIRMED, ""))
+        assertEquals("资料 · 已确认", MemoryVisibility.label(MemoryScope.PROFILE, LifecycleState.ACTIVE, ""))
     }
 
     @Test
     fun `legacy session facts stay in inventory but not current recall`() {
         assertFalse(
-            MemoryVisibility.recallable(MemoryScope.SESSION, MemoryState.CANDIDATE, "legacy", current),
+            MemoryVisibility.recallable(MemoryScope.SESSION, LifecycleState.CANDIDATE, "legacy", current),
         )
         assertTrue(MemoryVisibility.isolated(MemoryScope.SESSION, "legacy", current))
-        assertEquals("历史隔离 · 候选", MemoryVisibility.label(MemoryScope.SESSION, MemoryState.CANDIDATE, "legacy"))
+        assertEquals("历史隔离 · 候选", MemoryVisibility.label(MemoryScope.SESSION, LifecycleState.CANDIDATE, "legacy"))
     }
 
     @Test
     fun `other task is isolated until host allows cross task`() {
         assertFalse(
-            MemoryVisibility.recallable(MemoryScope.TASK, MemoryState.CANDIDATE, "task-b", current),
+            MemoryVisibility.recallable(MemoryScope.TASK, LifecycleState.CANDIDATE, "task-b", current),
         )
         assertTrue(
             MemoryVisibility.recallable(
                 MemoryScope.TASK,
-                MemoryState.CANDIDATE,
+                LifecycleState.CANDIDATE,
                 "task-b",
                 current.copy(allowCrossTask = true),
             ),

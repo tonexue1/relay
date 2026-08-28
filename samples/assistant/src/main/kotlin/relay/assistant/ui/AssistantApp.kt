@@ -1336,13 +1336,13 @@ private fun SettingsScreen(
                             if (state.memoryEnabled) "长期记忆已开启" else "长期记忆已暂停",
                             style = MaterialTheme.typography.titleMedium,
                         )
-                        Text("原文先落盘，4 回合或空闲后学习", color = InkMuted, style = MaterialTheme.typography.bodySmall)
+                        Text("原文先落盘。轮次写成 Episode，状态由宿主写入。", color = InkMuted, style = MaterialTheme.typography.bodySmall)
                     }
                     Switch(checked = state.memoryEnabled, onCheckedChange = onMemoryEnabledChange)
                 }
                 HorizontalDivider(Modifier.padding(vertical = 14.dp), color = Line)
                 Text(
-                    "${state.relations.size} 条关系 · ${state.claims.size} 条经历 · ${state.pendingRaw} 条待学习",
+                    "${state.relations.size} 条状态 · ${state.claims.size} 条经历 · ${state.pendingRaw} 条待消费",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

@@ -12,8 +12,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import relay.agent.Agent
 import relay.agent.AgentConfig
@@ -26,18 +24,16 @@ import relay.assistant.session.SessionStore
 import relay.assistant.session.toAgentTranscript
 import relay.llm.RelayLlmException
 import relay.llm.provider.DeepSeek
-import relay.memory.FlushReason
-import relay.memory.GRAPH_ASSISTANT
-import relay.memory.MemoryRuntime
-import relay.memory.MemorySessionCoordinator
-import relay.memory.RawTurn
+import relay.memory.OWNER_USER
 import relay.memory.RecallContext
-import relay.memory.dream.AgentConsolidator
-import relay.memory.engine.FileArtifactStore
-import relay.memory.engine.RoomMemoryDb
-import relay.memory.engine.SqliteMemoryStore
-import relay.memory.extract.CloudTripleExtractor
-import relay.memory.predicateLabel
+import relay.memory.SPACE_ASSISTANT
+import relay.memory.agent.recalling
+import relay.memory.api.ClockDomain
+import relay.memory.api.MemoryKind
+import relay.memory.api.MemoryRuntime
+import relay.memory.captureTurn
+import relay.memory.engine.SqliteLedgerRuntime
+import relay.memory.ensureAssistantSpace
 import relay.uikit.ChatTurn
 import relay.uikit.OrderedTurnReducer
 import relay.uikit.TurnItem
@@ -103,33 +99,22 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
         .build()
-    private val store = SqliteMemoryStore(
-        RoomMemoryDb.file(application),
-        FileArtifactStore(File(application.filesDir, "memory-artifacts")),
+    private val runtime: MemoryRuntime = SqliteLedgerRuntime(
+        application,
+        File(application.filesDir, "memory-ledger.db"),
     )
     private val artifacts = FileArtifactRepository(File(application.filesDir, "ui-artifacts"))
-    private val learnMutex = Mutex()
-    private var runtime: MemoryRuntime? = null
     private var agent: Agent? = null
     private var boundKey: String? = null
     private var boundMemoryEnabled: Boolean? = null
     private var boundAutomaticRecall: Boolean? = null
     private var inFlight: Job? = null
-    private val learnCoordinator = MemorySessionCoordinator(viewModelScope) { reason ->
-        flushLearn(reason)
-    }
 
     init {
         sessionStore.save(initialSessions)
         viewModelScope.launch {
+            runtime.ensureAssistantSpace()
             refreshMemory()
-            if (
-                _uiState.value.apiKey.isNotBlank() &&
-                _uiState.value.memoryEnabled &&
-                store.unconsumed(GRAPH_ASSISTANT).isNotEmpty()
-            ) {
-                learnCoordinator.requestFlush(FlushReason.FOREGROUND_RECOVERY)
-            }
         }
     }
 
@@ -197,10 +182,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         val changed = boundKey != null && value != boundKey
         _uiState.update { it.copy(apiKey = value) }
         if (changed) {
-            viewModelScope.launch {
-                learnCoordinator.flushAndJoin(FlushReason.NEW_SESSION)
-                dropAgent()
-            }
+            dropAgent()
         }
     }
 
@@ -208,78 +190,66 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         sessionStore.saveMemoryEnabled(value)
         _uiState.update { it.copy(memoryEnabled = value) }
         dropAgent()
-        if (value && _uiState.value.apiKey.isNotBlank()) {
-            learnCoordinator.requestFlush(FlushReason.FOREGROUND_RECOVERY)
-        }
     }
 
     fun newSession() {
         if (_uiState.value.running) return
-        viewModelScope.launch {
-            learnCoordinator.flushAndJoin(FlushReason.NEW_SESSION)
-            dropAgent()
-            val fresh = SessionStore.fresh()
-            _uiState.update { state ->
-                val sessions = listOf(fresh) + state.sessions
-                sessionStore.save(sessions)
-                state.copy(
-                    sessions = sessions,
-                    activeSessionId = fresh.id,
-                    turns = emptyList(),
-                    error = null,
-                )
-            }
+        dropAgent()
+        val fresh = SessionStore.fresh()
+        _uiState.update { state ->
+            val sessions = listOf(fresh) + state.sessions
+            sessionStore.save(sessions)
+            state.copy(
+                sessions = sessions,
+                activeSessionId = fresh.id,
+                turns = emptyList(),
+                error = null,
+            )
         }
+        viewModelScope.launch { refreshMemory() }
     }
 
     fun startResearchSession(entity: String) {
         if (_uiState.value.running || entity.isBlank()) return
-        viewModelScope.launch {
-            learnCoordinator.flushAndJoin(FlushReason.NEW_SESSION)
-            dropAgent()
-            val research = SessionStore.research(entity)
-            _uiState.update { state ->
-                val sessions = listOf(research) + state.sessions
-                sessionStore.save(sessions)
-                state.copy(
-                    sessions = sessions,
-                    activeSessionId = research.id,
-                    turns = research.turns,
-                    error = null,
-                )
-            }
+        dropAgent()
+        val research = SessionStore.research(entity)
+        _uiState.update { state ->
+            val sessions = listOf(research) + state.sessions
+            sessionStore.save(sessions)
+            state.copy(
+                sessions = sessions,
+                activeSessionId = research.id,
+                turns = research.turns,
+                error = null,
+            )
         }
     }
 
     fun selectSession(id: String) {
         val target = _uiState.value.sessions.firstOrNull { it.id == id } ?: return
         if (id == _uiState.value.activeSessionId || _uiState.value.running) return
-        viewModelScope.launch {
-            learnCoordinator.flushAndJoin(FlushReason.NEW_SESSION)
-            dropAgent()
-            _uiState.update {
-                it.copy(activeSessionId = target.id, turns = target.turns, error = null)
-            }
+        dropAgent()
+        _uiState.update {
+            it.copy(activeSessionId = target.id, turns = target.turns, error = null)
         }
+        viewModelScope.launch { refreshMemory() }
     }
 
     fun deleteSession(id: String) {
         if (_uiState.value.running) return
-        viewModelScope.launch {
-            val state = _uiState.value
-            val remaining = state.sessions.filterNot { it.id == id }.ifEmpty { listOf(SessionStore.fresh()) }
-            val active = if (state.activeSessionId == id) remaining.first() else {
-                remaining.firstOrNull { it.id == state.activeSessionId } ?: remaining.first()
-            }
-            if (active.id != state.activeSessionId) {
-                learnCoordinator.flushAndJoin(FlushReason.NEW_SESSION)
-                dropAgent()
-            }
-            sessionStore.save(remaining)
-            _uiState.update {
-                it.copy(sessions = remaining, activeSessionId = active.id, turns = active.turns)
-            }
+        val state = _uiState.value
+        val remaining = state.sessions.filterNot { it.id == id }.ifEmpty { listOf(SessionStore.fresh()) }
+        val active = if (state.activeSessionId == id) remaining.first() else {
+            remaining.firstOrNull { it.id == state.activeSessionId } ?: remaining.first()
         }
+        if (active.id != state.activeSessionId) {
+            dropAgent()
+        }
+        sessionStore.save(remaining)
+        _uiState.update {
+            it.copy(sessions = remaining, activeSessionId = active.id, turns = active.turns)
+        }
+        viewModelScope.launch { refreshMemory() }
     }
 
     fun renameSession(id: String, title: String) {
@@ -295,14 +265,10 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun onForeground() {
-        if (_uiState.value.apiKey.isNotBlank() && _uiState.value.memoryEnabled) {
-            learnCoordinator.requestFlush(FlushReason.FOREGROUND_RECOVERY)
-        }
         viewModelScope.launch { refreshMemory() }
     }
 
     fun onBackground() {
-        learnCoordinator.requestFlush(FlushReason.BACKGROUND)
     }
 
     fun refresh() {
@@ -337,26 +303,26 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         }
         try {
             if (_uiState.value.memoryEnabled && captureMemory) {
-                store.capture(
-                    RawTurn(
-                        GRAPH_ASSISTANT,
-                        role = "user",
-                        text = input,
-                        sessionId = sessionId,
-                        taskScopeId = taskScopeId,
-                    ),
+                runtime.captureTurn(
+                    spaceId = SPACE_ASSISTANT,
+                    ownerId = OWNER_USER,
+                    domain = ClockDomain.WALL_CLOCK,
+                    role = "user",
+                    text = input,
+                    sessionId = sessionId,
+                    taskScopeId = taskScopeId,
                 )
             }
             val visible = runAgent(activeAgent, input)
             if (visible.isNotBlank() && _uiState.value.memoryEnabled && captureMemory) {
-                store.capture(
-                    RawTurn(
-                        GRAPH_ASSISTANT,
-                        role = "assistant",
-                        text = visible,
-                        sessionId = sessionId,
-                        taskScopeId = taskScopeId,
-                    ),
+                runtime.captureTurn(
+                    spaceId = SPACE_ASSISTANT,
+                    ownerId = OWNER_USER,
+                    domain = ClockDomain.WALL_CLOCK,
+                    role = "assistant",
+                    text = visible,
+                    sessionId = sessionId,
+                    taskScopeId = taskScopeId,
                 )
             }
         } catch (error: CancellationException) {
@@ -371,7 +337,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             _uiState.update { it.copy(running = false, turns = OrderedTurnReducer.complete(it.turns)) }
             persistActiveSession()
             refreshMemory()
-            if (_uiState.value.memoryEnabled && captureMemory) learnCoordinator.onTurnCompleted()
         }
     }
 
@@ -412,77 +377,45 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    private suspend fun flushLearn(reason: FlushReason) {
-        learnMutex.withLock {
-            val state = _uiState.value
-            if (!state.memoryEnabled || state.apiKey.isBlank() || store.unconsumed(GRAPH_ASSISTANT).isEmpty()) {
-                return@withLock
-            }
-            val activeRuntime = runtime ?: run {
-                ensureAgent(state)
-                runtime ?: return@withLock
-            }
-            _uiState.update { it.copy(learning = true) }
-            try {
-                if (reason == FlushReason.FOREGROUND_RECOVERY) {
-                    activeRuntime.learn(GRAPH_ASSISTANT)
-                } else {
-                    activeRuntime.learn(GRAPH_ASSISTANT, state.activeSessionId)
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                _uiState.update { it.copy(error = "记忆学习失败：${error.message}") }
-            } finally {
-                _uiState.update { it.copy(learning = false) }
-                refreshMemory()
-            }
-        }
-    }
-
     private suspend fun refreshMemory() {
         val context = RecallContext(
             sessionId = _uiState.value.activeSessionId,
             taskScopeId = _uiState.value.memoryScopeId(),
         )
-        val inventory = store.facts(GRAPH_ASSISTANT)
-        val recallableKeys = store.facts(GRAPH_ASSISTANT, context).facts
-            .map { Triple(it.s, it.p, it.o) }
-            .toSet()
-        val claims = store.claims(GRAPH_ASSISTANT)
-        val pending = store.unconsumed(GRAPH_ASSISTANT).size
-        val relations = inventory.facts.map { fact ->
-            val visible = Triple(fact.s, fact.p, fact.o) in recallableKeys
+        val items = runtime.listItems(SPACE_ASSISTANT, OWNER_USER)
+        val pending = runtime.pendingRawCount(SPACE_ASSISTANT)
+        val relations = items.filter { it.kind == MemoryKind.STATE }.map { item ->
+            val visible = MemoryVisibility.recallable(item.scope, item.lifecycle, item.scopeId, context)
             MemoryRelationUi(
-                subject = fact.s,
-                predicate = predicateLabel(fact.p),
-                objectValue = fact.o,
-                scopeLabel = MemoryVisibility.label(fact.scope, fact.state, fact.scopeId),
+                subject = item.ownerId,
+                predicate = item.fieldId.orEmpty(),
+                objectValue = item.text,
+                scopeLabel = MemoryVisibility.label(item.scope, item.lifecycle, item.scopeId),
                 recallable = visible,
-                isolated = MemoryVisibility.isolated(fact.scope, fact.scopeId, context),
+                isolated = MemoryVisibility.isolated(item.scope, item.scopeId, context),
             )
         }
-        val claimUi = claims.map { claim ->
-            val visible = MemoryVisibility.recallable(claim.scope, claim.state, claim.scopeId, context)
+        val claimUi = items.filter { it.kind != MemoryKind.STATE }.map { item ->
+            val visible = MemoryVisibility.recallable(item.scope, item.lifecycle, item.scopeId, context)
             MemoryClaimUi(
-                text = claim.text,
-                confidence = claim.confidence,
-                scopeLabel = MemoryVisibility.label(claim.scope, claim.state, claim.scopeId),
+                text = item.text,
+                confidence = 1.0,
+                scopeLabel = MemoryVisibility.label(item.scope, item.lifecycle, item.scopeId),
                 recallable = visible,
-                isolated = MemoryVisibility.isolated(claim.scope, claim.scopeId, context),
+                isolated = MemoryVisibility.isolated(item.scope, item.scopeId, context),
             )
         }
-        val graphFacts = inventory.facts.filter { Triple(it.s, it.p, it.o) in recallableKeys }
-        val names = graphFacts.flatMap { listOf(it.s, it.o) }.distinct()
+        val graphFacts = relations.filter { it.recallable }
+        val names = graphFacts.flatMap { listOf(it.subject, it.objectValue) }.distinct()
         _uiState.update {
             it.copy(
                 graph = GraphSpec(
                     title = "当前可用记忆",
                     nodes = names.map { name -> GraphNode(name, name) },
                     edges = graphFacts.map { fact ->
-                        GraphEdge(fact.s, predicateLabel(fact.p), fact.o)
+                        GraphEdge(fact.subject, fact.predicate, fact.objectValue)
                     },
-                    claims = claimUi.filter { it.recallable }.map { it.text },
+                    claims = claimUi.filter { claim -> claim.recallable }.map { claim -> claim.text },
                     focusId = names.firstOrNull(),
                     showPredicates = true,
                 ),
@@ -499,7 +432,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     ): Agent {
         if (
             agent != null &&
-            runtime != null &&
             boundKey == state.apiKey &&
             boundMemoryEnabled == state.memoryEnabled &&
             boundAutomaticRecall == automaticRecall
@@ -509,16 +441,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         boundMemoryEnabled = state.memoryEnabled
         boundAutomaticRecall = automaticRecall
         val provider = DeepSeek.provider(state.apiKey, httpClient)
-        val activeRuntime = MemoryRuntime(
-            store = store,
-            extractor = CloudTripleExtractor(provider),
-            consolidator = AgentConsolidator(provider, store),
-        )
-        val recallContext = RecallContext(
-            sessionId = state.activeSessionId,
-            taskScopeId = state.memoryScopeId(),
-        )
-        runtime = activeRuntime
         agent = Agent(
             provider = provider,
             config = AgentConfig(
@@ -527,14 +449,16 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 maxTurns = 8,
                 timeoutMillis = 90_000,
             ),
-            tools = (if (state.memoryEnabled) {
-                activeRuntime.dayTools(GRAPH_ASSISTANT, recallContext)
-            } else {
-                emptyList()
-            }) +
-                uiArtifactTools(artifacts, includeHtml = false),
+            tools = uiArtifactTools(artifacts, includeHtml = false),
             contextAugmenters = if (state.memoryEnabled && automaticRecall) {
-                listOf(activeRuntime.recalling(GRAPH_ASSISTANT, recallContext))
+                listOf(
+                    runtime.recalling(
+                        spaceId = SPACE_ASSISTANT,
+                        ownerId = OWNER_USER,
+                        sessionId = { _uiState.value.activeSessionId },
+                        taskScopeId = { _uiState.value.memoryScopeId() },
+                    ),
+                )
             } else {
                 emptyList()
             },
@@ -548,7 +472,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun dropAgent() {
         agent = null
-        runtime = null
         boundKey = null
         boundMemoryEnabled = null
         boundAutomaticRecall = null
@@ -568,8 +491,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     override fun onCleared() {
         inFlight?.cancel()
-        learnCoordinator.cancel()
-        store.close()
+        (runtime as? SqliteLedgerRuntime)?.close()
         super.onCleared()
     }
 }
@@ -578,7 +500,7 @@ private fun AssistantUiState.memoryScopeId(): String =
     sessions.firstOrNull { it.id == activeSessionId }?.effectiveMemoryScopeId ?: activeSessionId
 
 private const val SYSTEM_PROMPT =
-    "你是手机上的个人助理。先使用上下文中的用户记忆，不足时再查询。" +
+    "你是手机上的个人助理。先使用上下文中垫入的用户记忆。" +
         "事实不确定就明确说明。需要结构化呈现时调用原生 UI 工具；不要生成 HTML。" +
         "需要用户在多个明确选项中做决定时，使用 render_choice_form；一组相关问题放在同一表单中，" +
         "taskAnchor 必须准确概括本轮用户的原始任务，等待用户提交后只围绕该任务继续。" +

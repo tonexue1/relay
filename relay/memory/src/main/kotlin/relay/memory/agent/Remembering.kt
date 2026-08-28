@@ -4,8 +4,12 @@ import relay.agent.ContextAugmentation
 import relay.agent.ContextAugmenter
 import relay.llm.model.Message
 import relay.llm.model.Role
-import relay.memory.MemoryStore
-import relay.memory.RecallContext
+import relay.memory.api.ClockDomain
+import relay.memory.api.ClockStamp
+import relay.memory.api.MemoryKind
+import relay.memory.api.MemoryRuntime
+import relay.memory.api.RecallRequest
+import relay.memory.api.RecallStatus
 
 fun interface RecallQuerySelector {
     fun select(messages: List<Message>): String
@@ -17,14 +21,29 @@ fun interface RecallQuerySelector {
     }
 }
 
-fun MemoryStore.recalling(
-    graphId: String,
+fun MemoryRuntime.recalling(
+    spaceId: String,
+    ownerId: String,
+    sessionId: () -> String = { "" },
+    taskScopeId: () -> String = { "" },
+    includeOwners: List<String> = emptyList(),
     pin: String = "",
-    budgetChars: Int = 2000,
+    budgetChars: Int = 2_000,
+    clock: () -> ClockStamp = { ClockStamp(ClockDomain.WALL_CLOCK, System.currentTimeMillis()) },
     querySelector: RecallQuerySelector = RecallQuerySelector.LatestUser,
 ): ContextAugmenter = ContextAugmenter { msgs ->
-    val q = querySelector.select(msgs)
-    val prefix = recallPad(graphId, q, budgetChars, pin)
+    val query = querySelector.select(msgs)
+    val prefix = recallPad(
+        spaceId = spaceId,
+        ownerId = ownerId,
+        query = query,
+        at = clock(),
+        sessionId = sessionId(),
+        taskScopeId = taskScopeId(),
+        includeOwners = includeOwners,
+        pin = pin,
+        budgetChars = budgetChars,
+    )
     if (prefix.isBlank()) {
         ContextAugmentation.Empty
     } else {
@@ -32,18 +51,47 @@ fun MemoryStore.recalling(
     }
 }
 
-fun MemoryStore.recalling(
-    graphId: String,
-    context: RecallContext,
+suspend fun MemoryRuntime.recallPad(
+    spaceId: String,
+    ownerId: String,
+    query: String,
+    at: ClockStamp,
+    sessionId: String = "",
+    taskScopeId: String = "",
+    includeOwners: List<String> = emptyList(),
     pin: String = "",
-    budgetChars: Int = 2000,
-    querySelector: RecallQuerySelector = RecallQuerySelector.LatestUser,
-): ContextAugmenter = ContextAugmenter { msgs ->
-    val q = querySelector.select(msgs)
-    val prefix = recallPad(graphId, q, context, budgetChars, pin)
-    if (prefix.isBlank()) {
-        ContextAugmentation.Empty
-    } else {
-        ContextAugmentation(listOf(Message.user(prefix)))
+    budgetChars: Int = 2_000,
+): String {
+    val result = recall(
+        RecallRequest(
+            spaceId = spaceId,
+            ownerId = ownerId,
+            query = query,
+            at = at,
+            sessionId = sessionId,
+            taskScopeId = taskScopeId,
+            includeOwners = includeOwners,
+            budgetChars = budgetChars,
+        ),
+    )
+    if (result.status == RecallStatus.BLOCKED && result.required.isEmpty() && result.hits.isEmpty()) {
+        return pin.trim()
     }
+    val states = result.required.values
+        .joinToString("\n") { "- ${it.fieldId}: ${it.text}" }
+    val hits = result.hits
+        .filter { it.kind != MemoryKind.STATE || it.itemId !in result.required.values.map { state -> state.itemId } }
+        .joinToString("\n") { "- ${it.text}" }
+    return buildString {
+        if (pin.isNotBlank()) append(pin.trim()).append('\n')
+        if (states.isNotBlank()) {
+            append("已知状态:\n")
+            append(states)
+        }
+        if (hits.isNotBlank()) {
+            if (isNotEmpty()) append('\n')
+            append("相关记忆:\n")
+            append(hits)
+        }
+    }.trim()
 }

@@ -13,8 +13,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import relay.agent.Agent
 import relay.agent.AgentConfig
@@ -30,16 +28,15 @@ import relay.artifacts.FileArtifactRepository
 import relay.demo.BuildConfig
 import relay.llm.RelayLlmException
 import relay.llm.provider.DeepSeek
-import relay.memory.GRAPH_ASSISTANT
-import relay.memory.MemoryRuntime
-import relay.memory.MemorySessionCoordinator
-import relay.memory.FlushReason
-import relay.memory.RawTurn
-import relay.memory.dream.AgentConsolidator
-import relay.memory.engine.FileArtifactStore
-import relay.memory.engine.RoomMemoryDb
-import relay.memory.engine.SqliteMemoryStore
-import relay.memory.extract.CloudTripleExtractor
+import relay.memory.OWNER_USER
+import relay.memory.SPACE_ASSISTANT
+import relay.memory.agent.recalling
+import relay.memory.api.ClockDomain
+import relay.memory.api.MemoryKind
+import relay.memory.api.MemoryRuntime
+import relay.memory.captureTurn
+import relay.memory.engine.SqliteLedgerRuntime
+import relay.memory.ensureAssistantSpace
 import relay.uikit.ChatTurn
 import relay.uikit.OrderedTurnReducer
 import relay.uikit.uiArtifactTools
@@ -67,7 +64,6 @@ data class AssistantUiState(
     val replaying: Boolean = false,
     val replayProgress: String = "",
     val learning: Boolean = false,
-    val consolidating: Boolean = false,
     val error: String? = null,
     val turns: List<ChatTurn> = emptyList(),
     val graph: GraphSpec = GraphSpec(nodes = emptyList(), edges = emptyList()),
@@ -92,40 +88,29 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         .readTimeout(90, TimeUnit.SECONDS)
         .build()
 
-    private val store = SqliteMemoryStore(
-        RoomMemoryDb.file(application),
-        FileArtifactStore(File(application.filesDir, "memory-artifacts")),
+    private val runtime: MemoryRuntime = SqliteLedgerRuntime(
+        application,
+        File(application.filesDir, "memory-ledger.db"),
     )
     private val artifacts = FileArtifactRepository(File(application.filesDir, "ui-artifacts"))
 
-    private var memory: MemoryRuntime? = null
     private var dayAgent: Agent? = null
     private var boundKey: String? = null
     private var inFlight: Job? = null
-    private val learnMutex = Mutex()
-    private var unsweptLearns = 0
     private var sessionId: String = newSessionId()
-    private val learnCoordinator = MemorySessionCoordinator(viewModelScope) { reason ->
-        flushLearn(reason)
-    }
 
     init {
         viewModelScope.launch {
+            runtime.ensureAssistantSpace()
             refreshGraph()
-            if (_uiState.value.apiKey.isNotBlank() && store.unconsumed(GRAPH_ASSISTANT).isNotEmpty()) {
-                learnCoordinator.requestFlush(FlushReason.FOREGROUND_RECOVERY)
-            }
         }
     }
 
     fun onApiKeyChange(value: String) {
         _uiState.update { it.copy(apiKey = value) }
         if (boundKey != null && boundKey != value) {
-            viewModelScope.launch {
-                learnCoordinator.flushAndJoin(FlushReason.NEW_SESSION)
-                dropSession()
-                sessionId = newSessionId()
-            }
+            dropSession()
+            sessionId = newSessionId()
         }
     }
 
@@ -155,7 +140,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             }
             try {
-                learnCoordinator.flushAndJoin(FlushReason.NEW_SESSION)
                 dropSession()
                 sessionId = newSessionId()
                 _uiState.update {
@@ -170,11 +154,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                         it.copy(replayProgress = "${index + 1}/${AssistantCorpus.episodeClaimReplay.size}")
                     }
                     runTurn(input)
-                    if ((index + 1) % REPLAY_EPISODE_TURNS == 0) {
-                        learnCoordinator.flushAndJoin(FlushReason.TURN_THRESHOLD)
-                    }
                 }
-                learnCoordinator.flushAndJoin(FlushReason.NEW_SESSION)
                 _uiState.update { it.copy(stageTrace = "回放完成") }
             } catch (e: CancellationException) {
                 _uiState.update { it.copy(stageTrace = "回放已停止") }
@@ -198,7 +178,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             it.copy(
                 running = false,
                 learning = false,
-                consolidating = false,
                 error = null,
                 turns = emptyList(),
                 toolTrace = "",
@@ -206,7 +185,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             )
         }
         viewModelScope.launch {
-            learnCoordinator.flushAndJoin(FlushReason.RESET)
             dropSession()
             sessionId = newSessionId()
         }
@@ -228,12 +206,24 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             )
         }
         try {
-            store.capture(RawTurn(GRAPH_ASSISTANT, role = "user", text = input, sessionId = sessionId))
+            runtime.captureTurn(
+                spaceId = SPACE_ASSISTANT,
+                ownerId = OWNER_USER,
+                domain = ClockDomain.WALL_CLOCK,
+                role = "user",
+                text = input,
+                sessionId = sessionId,
+            )
             refreshGraph()
             val assistant = runAgent(ensureDay(_uiState.value), input)
             if (assistant.isNotBlank()) {
-                store.capture(
-                    RawTurn(GRAPH_ASSISTANT, role = "assistant", text = assistant, sessionId = sessionId),
+                runtime.captureTurn(
+                    spaceId = SPACE_ASSISTANT,
+                    ownerId = OWNER_USER,
+                    domain = ClockDomain.WALL_CLOCK,
+                    role = "assistant",
+                    text = assistant,
+                    sessionId = sessionId,
                 )
             }
         } catch (e: CancellationException) {
@@ -252,120 +242,14 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             }
             refreshGraph()
-            learnCoordinator.onTurnCompleted()
-        }
-    }
-
-    private suspend fun flushLearn(reason: FlushReason) {
-        learnMutex.withLock {
-            val state = _uiState.value
-            if (state.apiKey.isBlank()) return@withLock
-            val runtime = memory ?: run {
-                ensureDay(state)
-                memory ?: return@withLock
-            }
-            if (store.unconsumed(GRAPH_ASSISTANT).isEmpty()) return@withLock
-            _uiState.update { it.copy(learning = true, stageTrace = "学习中 · ${reason.name.lowercase()}") }
-            try {
-                val reports = mutableListOf<relay.memory.LearnReport>()
-                var report: relay.memory.LearnReport
-                var succeeded: Boolean
-                do {
-                    report = if (reason == FlushReason.FOREGROUND_RECOVERY) {
-                        runtime.learn(GRAPH_ASSISTANT)
-                    } else {
-                        runtime.learn(GRAPH_ASSISTANT, sessionId)
-                    }
-                    reports += report
-                    succeeded = report.outcome?.name?.startsWith("SUCCESS") == true
-                } while (
-                    reason == FlushReason.FOREGROUND_RECOVERY &&
-                    succeeded &&
-                    report.eventIds.isNotEmpty() &&
-                    store.unconsumed(GRAPH_ASSISTANT).isNotEmpty() &&
-                    reports.size < MAX_RECOVERY_BATCHES
-                )
-                val claims = reports.flatMap { it.claims }
-                val drafts = reports.flatMap { it.drafts }
-                val extractErrors = reports.flatMap { it.extractErrors }
-                val ingestErrors = reports.flatMap { it.errors }
-                val lastOutcome = reports.lastOrNull()?.outcome
-                val body = buildString {
-                    append("Claim ${claims.size} 条，图稿 ${drafts.size} 条")
-                    lastOutcome?.let { append(" · $it") }
-                    append('\n')
-                    for (claim in claims) append("- ${claim.text}\n")
-                    for (draft in drafts) {
-                        append("- ${draft.s} ${draft.p} ${draft.o}")
-                        if (draft.retract) append(" retract")
-                        append('\n')
-                    }
-                    if (extractErrors.isNotEmpty()) {
-                        append("\nextract errors\n")
-                        for (error in extractErrors) append("- $error\n")
-                    }
-                    if (ingestErrors.isNotEmpty()) {
-                        append("\ningest errors\n")
-                        for (err in ingestErrors) {
-                            append("- ${err.p} ${err.reason} (${err.s} ${err.o})\n")
-                        }
-                    }
-                }
-                _uiState.update {
-                    it.copy(
-                        toolTrace = body.trim(),
-                        stageTrace = if (lastOutcome?.name?.startsWith("SUCCESS") == true) {
-                            "已学习"
-                        } else {
-                            "学习待重试"
-                        },
-                    )
-                }
-                if (drafts.isNotEmpty()) {
-                    unsweptLearns++
-                    if (unsweptLearns >= CONSOLIDATE_EVERY_LEARNS) {
-                        runConsolidate(runtime)
-                        unsweptLearns = 0
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: RelayLlmException) {
-                _uiState.update { it.copy(error = e.message ?: e.toString()) }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(error = "学习失败: ${e.message}") }
-            } finally {
-                _uiState.update { it.copy(learning = false) }
-                refreshGraph()
-            }
         }
     }
 
     fun onBackground() {
-        learnCoordinator.requestFlush(FlushReason.BACKGROUND)
     }
 
     fun onForeground() {
-        if (_uiState.value.apiKey.isNotBlank()) {
-            learnCoordinator.requestFlush(FlushReason.FOREGROUND_RECOVERY)
-        }
-    }
-
-    private suspend fun runConsolidate(runtime: MemoryRuntime) {
-        if (store.facts(GRAPH_ASSISTANT).facts.isEmpty()) return
-        _uiState.update { it.copy(consolidating = true, stageTrace = "整理中") }
-        try {
-            val report = runtime.consolidate(GRAPH_ASSISTANT)
-            _uiState.update {
-                it.copy(
-                    stageTrace = "已整理",
-                    toolTrace = report.summary.ifBlank { it.toolTrace },
-                )
-            }
-        } finally {
-            _uiState.update { it.copy(consolidating = false) }
-            refreshGraph()
-        }
+        viewModelScope.launch { refreshGraph() }
     }
 
     private suspend fun runAgent(agent: Agent, input: String): String {
@@ -395,22 +279,23 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private suspend fun refreshGraph() {
-        val hit = store.facts(GRAPH_ASSISTANT)
-        val pending = store.unconsumed(GRAPH_ASSISTANT).size
-        val claims = store.claims(GRAPH_ASSISTANT)
-        val names = hit.facts.flatMap { listOf(it.s, it.o) }.distinct()
+        val items = runtime.listItems(SPACE_ASSISTANT, OWNER_USER)
+        val pending = runtime.pendingRawCount(SPACE_ASSISTANT)
+        val states = items.filter { it.kind == MemoryKind.STATE }
+        val episodes = items.filter { it.kind != MemoryKind.STATE }
+        val names = states.flatMap { listOf(it.ownerId, it.text) }.distinct()
         val graph = GraphSpec(
-            title = "活图",
+            title = "记忆",
             nodes = names.map { GraphNode(it, it) },
-            edges = hit.facts.map { GraphEdge(it.s, relay.memory.predicateLabel(it.p), it.o) },
-            claims = claims.map { it.text },
+            edges = states.map { GraphEdge(it.ownerId, it.fieldId.orEmpty(), it.text) },
+            claims = episodes.map { it.text },
             focusId = names.firstOrNull(),
         )
         _uiState.update {
             it.copy(
                 graph = graph,
-                factCount = hit.facts.size,
-                claimCount = claims.size,
+                factCount = states.size,
+                claimCount = episodes.size,
                 pendingRaw = pending,
             )
         }
@@ -537,16 +422,10 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun ensureDay(state: AssistantUiState): Agent {
-        if (dayAgent != null && boundKey == state.apiKey && memory != null) return dayAgent!!
+        if (dayAgent != null && boundKey == state.apiKey) return dayAgent!!
         dropSession()
         boundKey = state.apiKey
         val provider = DeepSeek.provider(apiKey = state.apiKey, httpClient = httpClient)
-        val runtime = MemoryRuntime(
-            store = store,
-            extractor = CloudTripleExtractor(provider),
-            consolidator = AgentConsolidator(provider, store),
-        )
-        memory = runtime
         dayAgent = Agent(
             provider = provider,
             config = AgentConfig(
@@ -555,36 +434,35 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 maxTurns = 8,
                 timeoutMillis = 90_000,
             ),
-            tools = runtime.dayTools(GRAPH_ASSISTANT) + uiArtifactTools(artifacts),
-            contextAugmenters = listOf(runtime.recalling(GRAPH_ASSISTANT)),
+            tools = uiArtifactTools(artifacts),
+            contextAugmenters = listOf(
+                runtime.recalling(
+                    spaceId = SPACE_ASSISTANT,
+                    ownerId = OWNER_USER,
+                    sessionId = { sessionId },
+                ),
+            ),
         )
         return dayAgent!!
     }
 
     private fun dropSession() {
         dayAgent = null
-        memory = null
         boundKey = null
-        unsweptLearns = 0
     }
 
     override fun onCleared() {
         inFlight?.cancel()
-        learnCoordinator.cancel()
-        store.close()
+        (runtime as? SqliteLedgerRuntime)?.close()
         super.onCleared()
     }
 
     private companion object {
-        const val CONSOLIDATE_EVERY_LEARNS = 3
-        const val MAX_RECOVERY_BATCHES = 32
-        const val REPLAY_EPISODE_TURNS = 4
         fun newSessionId(): String = UUID.randomUUID().toString()
     }
 }
 
 private const val DAY_SYSTEM =
-    "你是手机上的个人助理。图在用户设备上。先看垫进来的已知事实，不够再 memory_query 或 memory_facts。" +
-        "query 用字面词（花生），不要把火锅当成过敏。用户新说的事实先听着，不要自己 ingest；Episode 后会自动学习。" +
-        "复杂经历可能以相关经历形式垫入。" +
-        "不知道图里有没有就说还没记住。用中文，简短。"
+    "你是手机上的个人助理。先看垫进来的已知记忆。" +
+        "用户新说的事实先听着，不要自己写库。" +
+        "不知道有没有就说还没记住。用中文，简短。"

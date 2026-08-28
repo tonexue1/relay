@@ -78,6 +78,8 @@ dependencies {
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.sqlite.bundled.jvm)
+    testImplementation(libs.kotlinx.serialization.json)
+    testImplementation(libs.kotlinx.coroutines.core)
 }
 
 configurations.configureEach {

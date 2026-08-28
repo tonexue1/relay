@@ -23,7 +23,6 @@ android {
 }
 
 dependencies {
-    api(project(":relay:llm"))
     api(project(":relay:agent-core"))
     api(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)

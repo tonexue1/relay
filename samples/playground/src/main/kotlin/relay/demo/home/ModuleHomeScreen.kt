@@ -49,7 +49,7 @@ enum class RelayModule(
     ),
     Memory(
         artifact = "relay/memory",
-        summary = "召回进对话，说完后台学习，积一批再整理",
+        summary = "抽完存，再按点时召回。没有知识图。",
         available = true,
     ),
     UiKit(

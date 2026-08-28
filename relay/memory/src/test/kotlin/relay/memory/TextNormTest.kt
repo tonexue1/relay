@@ -9,15 +9,6 @@ import relay.memory.engine.queryTokens
 class TextNormTest {
 
     @Test
-    fun closedPredicateSetMatchesLabels() {
-        assertEquals(34, PREDICATES.size)
-        assertEquals(PREDICATES, PREDICATE_ZH.keys)
-        assertTrue(FUNCTIONAL_PREDICATES.all { it in PREDICATES })
-        assertEquals(10, NOVEL_PREDICATES.size)
-        assertEquals(NOVEL_PREDICATES, NOVEL_PREDICATE_ZH.keys)
-    }
-
-    @Test
     fun compactWhitespaceAndNfkc() {
         assertEquals("花生酱", normalizeText("花生酱"))
         assertEquals("杭州", normalizeText("  杭 州  "))

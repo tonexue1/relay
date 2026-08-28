@@ -1,6 +1,6 @@
 # memory
 
-给调用方看的合同。设计备忘见 [memory-engine.md](./memory-engine.md)。
+给调用方看的合同。本文是旧图备忘。目标设计：[relay/memory/docs](../relay/memory/docs/README.md)。
 
 默认接入走 `MemoryRuntime` 三个时机：
 

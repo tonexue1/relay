@@ -1,112 +1,134 @@
-# 对外接口
+# 接口
 
-模块 `:relay:memory`。接入方默认只碰 `MemoryRuntime` 三个时机。图合同和工具是下一层。
+宿主只碰 `MemoryRuntime`。类型以落地代码为准，本文是评审合同。
 
-内部怎么存、怎么召回，见 [internals.md](./internals.md)。
-
-## 默认路径
-
-```kotlin
-val store = SqliteMemoryStore(RoomMemoryDb.file(context), FileArtifactStore(dir))
-val memory = MemoryRuntime(
-    store = store,
-    extractor = CloudTripleExtractor(provider),
-    consolidator = AgentConsolidator(provider, store),
-)
-val recall = RecallContext(
-    sessionId = sessionId,
-    taskScopeId = taskId,
-)
-
-val agent = Agent(
-    provider, config,
-    tools = memory.dayTools(graphId, recall),
-    contextAugmenters = listOf(memory.recalling(graphId, recall)),
-)
-
-store.capture(RawTurn(graphId, "user", input, sessionId, taskScopeId = taskId))
-val reply = agent.run(input).text.orEmpty()
-store.capture(RawTurn(graphId, "assistant", reply, sessionId, taskScopeId = taskId))
-
-memory.learn(graphId, sessionId) // Episode 阈值 / 空闲 / 会话结束，不要每轮调
-memory.consolidate(graphId)      // 空闲或阈值，不要每轮
-```
-
-> TODO(UIKit)：这里暂以 `AgentResult.text` 作为助手输出。UIKit 落地后，UI tool call
-> 可能就是用户可见结论；届时应 capture 完整 visible turn 的文本投影（文本 +
-> `WidgetSpec.summary()`），不要只记录最终 reply、tool ack 或原始 spec JSON。
-
-`Agent` 不接收 `MemoryStore`。`Provider` 只进抽取器和整理器。
+---
 
 ## MemoryRuntime
 
-| 调用 | 时机 | 返回 |
-|---|---|---|
-| `recalling(graphId, RecallContext, pin, budgetChars, querySelector)` | 每次进模型前 | `ContextAugmenter` |
-| `dayTools(graphId, RecallContext)` | 白天 Agent | scoped query / facts |
-| `nightTools(graphId)` | 夜间 Agent | recent / neighborhood / merge / facts / ingest |
-| `learn(graphId)` | 处理最早的未消费 session | `LearnReport` |
-| `learn(graphId, sessionId)` | 同一会话积成 Episode 后 | `LearnReport` |
-| `learnBatch(batch)` | 宿主自己规划批次时 | `LearnReport` |
-| `consolidate(graphId, since)` | 空闲 / 阈值 | `ConsolidationReport` |
-
-`pin` 会无条件垫进召回块（小说 logline 用）。`budgetChars` 默认 2000。
-`querySelector` 默认选择最后一条 user 消息；宿主可传 `RecallQuerySelector` 排除合成消息或绑定任务查询。
-
-`RecallContext(sessionId, taskScopeId)` 将候选限制为：已确认的 `PROFILE`、当前
-`TASK`、当前 `SESSION`。默认 `allowCrossTask=false`；只有宿主明确创建
-`RecallContext(..., allowCrossTask=true)` 时，白天工具才可跨任务读取，模型参数本身
-不能打开该能力。无 context 的旧重载继续保留以兼容现有调用；新助手接入应传 context。
-
-`LearnReport`：`runId`、`sessionId`、`eventIds`、`claims`、`drafts`、`outcome`、抽取/入库错误。无未消费原文时为空报告。
-
-`CloudTripleExtractor` 双输出：注册关系能忠实表达的事实进 `drafts`；复杂但耐久的信息进开放 `claims`。合法纯闲聊是 `SUCCESS_EMPTY` 并消费原文。用户轮看起来像个人事实但两边都空时，运行时改判 `LOW_YIELD`，**不消费**，下次还可以重抽。解析失败、截断、拒答也不消费原文。
-
-没有挂 consolidator 时，`consolidate` 返回空报告。
-
-## 造库
-
 ```kotlin
-SqliteMemoryStore(context)                 // 内存 Room
-SqliteMemoryStore(context, file)           // 文件 + 同目录附件
-SqliteMemoryStore(RoomMemoryDb.file(ctx), FileArtifactStore(dir))
+interface MemoryRuntime {
+    suspend fun capture(event: RawEventDraft): RawEventId
+    suspend fun registerStateSchema(snapshot: StateSchemaSnapshot): SchemaRegistration
+    suspend fun ensureStateField(spec: StateFieldSpec): FieldRegistration
+    suspend fun putFieldAlias(spaceId: String, alias: String, canonicalFieldId: String)
+    suspend fun commit(batch: MemoryBatch): CommitResult
+    suspend fun recall(request: RecallRequest): RecallResult
+    suspend fun getStates(request: StateReadRequest): StateReadResult
+    suspend fun getStateHistory(request: StateHistoryRequest): List<StateVersion>
+    suspend fun indexHealth(spaceId: String): IndexHealth
+}
 ```
 
-`RoomMemoryDb.inMemory(context)` / `file(context, name|File)`。测试用 `InMemoryMemoryStore(context)`。
+`putFieldAlias`：`canonicalFieldId` 必须已在 `state_field`。`alias` 不得占用另一个 `field_id`。不合并两条值。
 
-## 图合同（MemoryStore）
+---
 
-每笔读写带 `graphId`。引擎不理解中文、不抽三元组、不 DELETE 边（只过期）。
+## 字段目录
 
-| 调用 | 语义 |
-|---|---|
-| `capture(turn)` | 原文入队，未消费 |
-| `ingest(drafts)` | 按字写入。坏 `p` / 空字段进 `errors` |
-| `ingestClaims` / `queryClaims` / `claims` | 开放 Claim 写入、FTS 查询、枚举 |
-| `query(graphId, text[, RecallContext])` | 收紧后的字面 FTS + 一跳 |
-| `facts(graphId[, RecallContext])` / `recent` / `neighborhood` | 活边 / 近系统钟 / 邻居 |
-| `mergeNodes(keep, drop)` | 并节点，只动系统钟 |
-| `unconsumed` / `markConsumed` | 抽取队列 |
-| `forget` / `pendingReview` / `resolveReview` | 剪边、功能覆盖审核 |
-| `rebuildFromFactLog` | 丢掉活图再重放 |
+```kotlin
+enum class OverwritePolicy {
+    EXTRACTOR_CAN_CURRENT,
+    EXTRACTOR_CANDIDATE_ONLY,
+    USER_LOCK,
+}
 
-稿：`RawTurn`、`ClaimDraft`、`TripleDraft`（可 `retract`、`validAt` /
-`invalidAt`、`scope` / `state` / `scopeId`）。命中：`OpenClaim` / `MemoryHit` /
-`Fact`，均可读取作用域元数据。作用域为 `PROFILE` / `TASK` / `SESSION`，状态为
-`CANDIDATE` / `CONFIRMED`。`GRAPH_ASSISTANT`、`PREDICATES` 在根包。
+data class StateFieldSpec(
+    val fieldId: String,
+    val contract: ValueContract,
+    val authorityMode: AuthorityMode,
+    val projectionMode: ProjectionMode,
+    val riskTier: RiskTier,
+    val allowedWriters: Set<MemoryWriterKind>,
+    val overwritePolicy: OverwritePolicy,
+)
+```
 
-## 模型侧零件
+`ensureStateField`：已有复用，没有建槽。入参若命中别名，按规范名复用，不新建第二个槽。
 
-需要自己拼、不走 Runtime 时：
+SDK 不内置 `profile.*`。助手建议种子：`allergies`（`USER_LOCK`）。小说建议种子：`location`、`current_goal`。
 
-| 符号 | 包 | 用途 |
-|---|---|---|
-| `MemoryStore.recalling` | `relay.memory.agent` | 与 Runtime 同一 augmenter |
-| `graphTools` / `dayTools` / `nightTools` | 同上 | `graphId` 绑死，模型不能 hop 图 |
-| `MemoryExtractor` / `CloudTripleExtractor` | `relay.memory.extract` | 对话 → `TripleDraft` |
-| `MemoryConsolidator` / `AgentConsolidator` | `relay.memory.dream` | 夜间整理 |
-| `DREAM_SYSTEM` | 同上 | 夜班 system，一般不必自己挂 |
+---
 
-召回必须是 augmenter，不要塞进 `transformContext`。后者只投影正常对话；窗口裁剪由 Agent 统一做。
+## 写入
 
-事实垫成临时 user 消息。不要垫 system：`Agent.withSystem` 会丢掉。
+抽取器只出 Proposal，不能 `commit`。`suggestedFieldId` 可新可旧，也可是别名。
+
+```kotlin
+data class StateCommand(
+    val fieldId: String,                 // 规范名或别名，commit 时解析
+    val payload: JsonObject,
+    val rendered: RenderedText,
+    val sources: List<SourceRef>,
+    val expectedCurrentId: String?,
+    val sourceRevision: Long?,
+    val validFrom: ClockStamp,
+    val targetLifecycle: TargetLifecycle,
+    val overrideUserEdit: Boolean = false,
+    ...
+)
+
+data class EpisodeCommand(
+    val idempotencyKey: String,          // 唯一：(space, owner, key)
+    val occurredAt: ClockStamp?,         // 小说必填
+    ...
+)
+```
+
+当前 `(space, owner, fieldId)` 任一 scope 的当前值是 `USER_EDIT` 且字段 `USER_LOCK`：抽取器在任何 scope 写 `CURRENT` → `USER_LOCK`。只能 CANDIDATE。`overrideUserEdit=true` 仅 USER_EDIT / HOST。
+
+小说 State / Reflection 缺 `validFrom` → 拒。Episode 缺 `occurredAt` → 拒。
+
+`ClockStamp.domain` 必须等于 space。否则 `CLOCK_DOMAIN_MISMATCH`。
+
+错误码至少包括：`UNKNOWN_FIELD`、`AMBIGUOUS_FIELD`、`SOURCE_NOT_FOUND`、`CAS_CONFLICT`、`WRITER_NOT_ALLOWED`、`USER_LOCK`、`IDEMPOTENT_REPLAY`。
+
+---
+
+## 读取
+
+```kotlin
+data class RecallRequest(
+    val spaceId: String,
+    val ownerId: String,
+    val includeOwners: List<String> = emptyList(),  // 世界仓等，默认不加
+    val query: String,
+    val recentMessages: List<Message>,
+    val sessionId: String,
+    val taskScopeId: String,
+    val at: ClockStamp,
+    val requiredFields: List<RequiredField>,        // 别名或规范名
+    val contextContractId: String?,
+    val contextContractVersion: String?,
+    val budgetChars: Int = 2_000,
+    val explain: Boolean = false,
+)
+
+data class StateReadRequest(
+    val spaceId: String,
+    val ownerId: String,
+    val includeOwners: List<String> = emptyList(),
+    val selectors: Set<StateSelector>,
+    val at: ClockStamp,
+)
+```
+
+必带与 `getStates`：别名 → 规范名，再按 `at` 点时取 ACTIVE 版本。不要 `WHERE is_current=1`。
+
+`includeOwners` 空 = 只读 `ownerId`。跨 owner 泄漏是 bug，不是配置。
+
+传了 `requiredFields` 必须带契约 ID/版本。默认 `onMissing=BLOCK`。
+
+`getStateHistory`：版本链，含 `is_current=0`。可按时间窗过滤。
+
+---
+
+## 隔离
+
+- 跨 `space_id` 恒为空
+- 默认跨 `owner_id` 恒为空；只有 `includeOwners` 列出的才加进来
+- SESSION / TASK 必须匹配请求里的 `scope_id`
+- 四路 STATE / Reflection 与必带同一套 `at` + `valid_*`，不用 `is_current`
+- 小说 `occurred_at > at` 或 `valid_from > at` 的行不出现
+- 硬过滤在 SQL `LIMIT` 之前
+- 最近 `ORDER BY` 业务时间

@@ -1,6 +1,6 @@
 # Relay · 记忆引擎(非 LLM)
 
-> 调用合同：[memory-api.md](./memory-api.md)（关系、时钟、原语）。本文是设计备忘，不是 spec。
+> 本文是旧图备忘，不是目标设计。评审请看 [relay/memory/docs](../relay/memory/docs/README.md)。
 > 状态:设计备忘(2026-08-19)。
 > 问题:不含模型的记忆引擎怎么存、怎么合、怎么查、怎么忘。
 > 抽取在云。端侧小模型不在本设计视野。v1 只做个人助手;`novel:{id}` 分仓已通手抽入库(林晚十回,一章一存),云端抽取未接。存储是 SQLite + FTS5。Orchestra 工作记忆见 [multi-agent-memory.md](./multi-agent-memory.md)。

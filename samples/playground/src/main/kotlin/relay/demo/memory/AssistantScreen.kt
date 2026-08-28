@@ -123,7 +123,7 @@ private fun SettingsCard(state: AssistantUiState, viewModel: AssistantViewModel)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                "原文先落盘；4 回合或空闲后批量学习。复杂经历进 Claim，稳定关系进图。",
+                "原文先落盘。对话轮次写成 Episode，状态由宿主 commit。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -176,7 +176,7 @@ private fun MemoryOverviewScreen(state: AssistantUiState, onBack: () -> Unit) {
         ) {
             item {
                 Text(
-                    "${state.factCount} 条闭集关系 · ${state.claimCount} 条开放 Claim · ${state.pendingRaw} 条待学习原文",
+                    "${state.factCount} 条状态 · ${state.claimCount} 条经历 · ${state.pendingRaw} 条待消费原文",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -307,7 +307,7 @@ private fun Composer(state: AssistantUiState, viewModel: AssistantViewModel) {
                     Text(if (state.replaying) "停止 ${state.replayProgress}" else "回放 12 轮")
                 }
                 TextButton(onClick = viewModel::resetChat, enabled = !state.busy) { Text("清空") }
-                if (state.running || state.learning || state.consolidating) {
+                if (state.running || state.learning) {
                     CircularProgressIndicator(strokeWidth = 2.dp)
                 }
             }
