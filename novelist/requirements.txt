@@ -1,0 +1,4 @@
+openai>=2.48.0
+PyYAML>=6.0.3
+python-dotenv>=1.2.2
+pytest>=9.1.1
