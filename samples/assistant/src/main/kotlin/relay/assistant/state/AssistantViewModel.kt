@@ -24,16 +24,17 @@ import relay.assistant.session.SessionStore
 import relay.assistant.session.toAgentTranscript
 import relay.llm.RelayLlmException
 import relay.llm.provider.DeepSeek
-import relay.memory.OWNER_USER
+import relay.assistant.memory.OWNER_USER
+import relay.assistant.memory.SPACE_ASSISTANT
+import relay.assistant.memory.captureTurn
+import relay.assistant.memory.ensureAssistantSpace
+import relay.assistant.memory.rememberTools
 import relay.memory.RecallContext
-import relay.memory.SPACE_ASSISTANT
 import relay.memory.agent.recalling
 import relay.memory.api.ClockDomain
 import relay.memory.api.MemoryKind
 import relay.memory.api.MemoryRuntime
-import relay.memory.captureTurn
 import relay.memory.engine.SqliteLedgerRuntime
-import relay.memory.ensureAssistantSpace
 import relay.uikit.ChatTurn
 import relay.uikit.OrderedTurnReducer
 import relay.uikit.TurnItem
@@ -109,6 +110,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     private var boundMemoryEnabled: Boolean? = null
     private var boundAutomaticRecall: Boolean? = null
     private var inFlight: Job? = null
+    private var lastRawEventIds: List<String> = emptyList()
 
     init {
         sessionStore.save(initialSessions)
@@ -303,14 +305,16 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         }
         try {
             if (_uiState.value.memoryEnabled && captureMemory) {
-                runtime.captureTurn(
-                    spaceId = SPACE_ASSISTANT,
-                    ownerId = OWNER_USER,
-                    domain = ClockDomain.WALL_CLOCK,
-                    role = "user",
-                    text = input,
-                    sessionId = sessionId,
-                    taskScopeId = taskScopeId,
+                lastRawEventIds = listOf(
+                    runtime.captureTurn(
+                        spaceId = SPACE_ASSISTANT,
+                        ownerId = OWNER_USER,
+                        domain = ClockDomain.WALL_CLOCK,
+                        role = "user",
+                        text = input,
+                        sessionId = sessionId,
+                        taskScopeId = taskScopeId,
+                    ),
                 )
             }
             val visible = runAgent(activeAgent, input)
@@ -449,7 +453,15 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 maxTurns = 8,
                 timeoutMillis = 90_000,
             ),
-            tools = uiArtifactTools(artifacts, includeHtml = false),
+            tools = (if (state.memoryEnabled) {
+                runtime.rememberTools(
+                    spaceId = SPACE_ASSISTANT,
+                    ownerId = OWNER_USER,
+                    rawEventIds = { lastRawEventIds },
+                )
+            } else {
+                emptyList()
+            }) + uiArtifactTools(artifacts, includeHtml = false),
             contextAugmenters = if (state.memoryEnabled && automaticRecall) {
                 listOf(
                     runtime.recalling(
@@ -501,6 +513,7 @@ private fun AssistantUiState.memoryScopeId(): String =
 
 private const val SYSTEM_PROMPT =
     "你是手机上的个人助理。先使用上下文中垫入的用户记忆。" +
+        "用户说出稳定事实（过敏、住址等）时调用 remember_state；一次性打算不要记。" +
         "事实不确定就明确说明。需要结构化呈现时调用原生 UI 工具；不要生成 HTML。" +
         "需要用户在多个明确选项中做决定时，使用 render_choice_form；一组相关问题放在同一表单中，" +
         "taskAnchor 必须准确概括本轮用户的原始任务，等待用户提交后只围绕该任务继续。" +

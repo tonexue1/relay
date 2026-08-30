@@ -9,19 +9,21 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import relay.llm.model.Message
-import relay.memory.OWNER_USER
-import relay.memory.SPACE_ASSISTANT
+import relay.memory.MemoryScope
 import relay.memory.api.ClockDomain
 import relay.memory.api.ClockStamp
+import relay.memory.api.EpisodeCommand
 import relay.memory.api.MemoryBatch
 import relay.memory.api.MemoryWriterKind
+import relay.memory.api.OverwritePolicy
+import relay.memory.api.RawEventDraft
 import relay.memory.api.RenderedText
 import relay.memory.api.SourceRef
 import relay.memory.api.SourceType
 import relay.memory.api.StateCommand
-import relay.memory.captureTurn
+import relay.memory.api.StateFieldSpec
+import relay.memory.api.StateSchemaSnapshot
 import relay.memory.engine.SqliteLedgerRuntime
-import relay.memory.ensureAssistantSpace
 import relay.memory.testContext
 
 @RunWith(RobolectricTestRunner::class)
@@ -29,47 +31,73 @@ import relay.memory.testContext
 class RememberingTest {
 
     @Test
-    fun recallingPadsAllergyAndEpisode() = runTest {
+    fun recallingPadsStateAndEpisode() = runTest {
         val runtime = SqliteLedgerRuntime(testContext())
-        runtime.ensureAssistantSpace()
-        val rawId = runtime.captureTurn(
-            spaceId = SPACE_ASSISTANT,
-            ownerId = OWNER_USER,
-            domain = ClockDomain.WALL_CLOCK,
-            role = "user",
-            text = "我花生过敏，火锅别放花生。",
-            sessionId = "s1",
+        val space = "space"
+        val owner = "owner"
+        runtime.registerStateSchema(
+            StateSchemaSnapshot(
+                spaceId = space,
+                clockDomain = ClockDomain.WALL_CLOCK,
+                fields = listOf(
+                    StateFieldSpec(
+                        spaceId = space,
+                        fieldId = "note",
+                        overwritePolicy = OverwritePolicy.USER_LOCK,
+                    ),
+                ),
+            ),
         )
+        val rawId = runtime.capture(
+            RawEventDraft(
+                spaceId = space,
+                ownerId = owner,
+                role = "user",
+                content = "我花生过敏，火锅别放花生。",
+                clockDomain = ClockDomain.WALL_CLOCK,
+                sessionId = "s1",
+            ),
+        )
+        val now = ClockStamp(ClockDomain.WALL_CLOCK, System.currentTimeMillis())
         val result = runtime.commit(
             MemoryBatch(
-                spaceId = SPACE_ASSISTANT,
-                ownerId = OWNER_USER,
+                spaceId = space,
+                ownerId = owner,
                 writerKind = MemoryWriterKind.HOST,
                 writerId = "test",
                 writerRunId = "seed",
                 commands = listOf(
+                    EpisodeCommand(
+                        idempotencyKey = "raw:$rawId",
+                        occurredAt = now,
+                        rendered = RenderedText("user: 我花生过敏，火锅别放花生。"),
+                        sources = listOf(SourceRef(SourceType.RAW_EVENT, rawId)),
+                        scope = MemoryScope.SESSION,
+                        scopeId = "s1",
+                    ),
                     StateCommand(
-                        fieldId = "allergies",
+                        fieldId = "note",
                         payload = JsonObject(mapOf("value" to JsonPrimitive("花生"))),
                         rendered = RenderedText("花生"),
                         sources = listOf(SourceRef(SourceType.RAW_EVENT, rawId)),
-                        validFrom = ClockStamp(ClockDomain.WALL_CLOCK, System.currentTimeMillis()),
+                        validFrom = now,
                     ),
                 ),
+                commitRawIds = listOf(rawId),
             ),
         )
         assertTrue(result.ok)
 
         val pad = runtime.recallPad(
-            spaceId = SPACE_ASSISTANT,
-            ownerId = OWNER_USER,
+            spaceId = space,
+            ownerId = owner,
             query = "火锅",
-            at = ClockStamp(ClockDomain.WALL_CLOCK, System.currentTimeMillis()),
+            at = now,
             sessionId = "s1",
         )
         assertTrue("花生" in pad)
 
-        val augmenter = runtime.recalling(SPACE_ASSISTANT, OWNER_USER, sessionId = { "s1" })
+        val augmenter = runtime.recalling(space, owner, sessionId = { "s1" })
         val out = augmenter.augment(listOf(Message.user("今晚想吃火锅")))
         assertTrue(out.messages.any { "花生" in (it.content.orEmpty()) })
     }

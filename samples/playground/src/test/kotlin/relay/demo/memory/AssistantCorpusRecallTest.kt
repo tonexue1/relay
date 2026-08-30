@@ -10,8 +10,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import relay.memory.OWNER_USER
-import relay.memory.SPACE_ASSISTANT
 import relay.memory.api.ClockDomain
 import relay.memory.api.ClockStamp
 import relay.memory.api.MemoryBatch
@@ -23,9 +21,7 @@ import relay.memory.api.SourceType
 import relay.memory.api.StateCommand
 import relay.memory.api.StateReadRequest
 import relay.memory.api.StateSelector
-import relay.memory.captureTurn
 import relay.memory.engine.SqliteLedgerRuntime
-import relay.memory.ensureAssistantSpace
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])

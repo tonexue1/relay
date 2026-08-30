@@ -28,15 +28,11 @@ import relay.artifacts.FileArtifactRepository
 import relay.demo.BuildConfig
 import relay.llm.RelayLlmException
 import relay.llm.provider.DeepSeek
-import relay.memory.OWNER_USER
-import relay.memory.SPACE_ASSISTANT
 import relay.memory.agent.recalling
 import relay.memory.api.ClockDomain
 import relay.memory.api.MemoryKind
 import relay.memory.api.MemoryRuntime
-import relay.memory.captureTurn
 import relay.memory.engine.SqliteLedgerRuntime
-import relay.memory.ensureAssistantSpace
 import relay.uikit.ChatTurn
 import relay.uikit.OrderedTurnReducer
 import relay.uikit.uiArtifactTools
@@ -98,6 +94,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     private var boundKey: String? = null
     private var inFlight: Job? = null
     private var sessionId: String = newSessionId()
+    private var lastRawEventIds: List<String> = emptyList()
 
     init {
         viewModelScope.launch {
@@ -206,13 +203,15 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             )
         }
         try {
-            runtime.captureTurn(
-                spaceId = SPACE_ASSISTANT,
-                ownerId = OWNER_USER,
-                domain = ClockDomain.WALL_CLOCK,
-                role = "user",
-                text = input,
-                sessionId = sessionId,
+            lastRawEventIds = listOf(
+                runtime.captureTurn(
+                    spaceId = SPACE_ASSISTANT,
+                    ownerId = OWNER_USER,
+                    domain = ClockDomain.WALL_CLOCK,
+                    role = "user",
+                    text = input,
+                    sessionId = sessionId,
+                ),
             )
             refreshGraph()
             val assistant = runAgent(ensureDay(_uiState.value), input)
@@ -434,7 +433,11 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 maxTurns = 8,
                 timeoutMillis = 90_000,
             ),
-            tools = uiArtifactTools(artifacts),
+            tools = runtime.rememberTools(
+                spaceId = SPACE_ASSISTANT,
+                ownerId = OWNER_USER,
+                rawEventIds = { lastRawEventIds },
+            ) + uiArtifactTools(artifacts),
             contextAugmenters = listOf(
                 runtime.recalling(
                     spaceId = SPACE_ASSISTANT,
@@ -464,5 +467,5 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
 private const val DAY_SYSTEM =
     "你是手机上的个人助理。先看垫进来的已知记忆。" +
-        "用户新说的事实先听着，不要自己写库。" +
+        "用户说出稳定事实（过敏、住址等）时调用 remember_state；一次性打算不要记。" +
         "不知道有没有就说还没记住。用中文，简短。"

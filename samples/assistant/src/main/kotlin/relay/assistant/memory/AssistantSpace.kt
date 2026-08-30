@@ -1,5 +1,6 @@
-package relay.memory
+package relay.assistant.memory
 
+import relay.memory.MemoryScope
 import relay.memory.api.ClockDomain
 import relay.memory.api.ClockStamp
 import relay.memory.api.EpisodeCommand
@@ -15,6 +16,9 @@ import relay.memory.api.SourceRef
 import relay.memory.api.SourceType
 import relay.memory.api.StateFieldSpec
 import relay.memory.api.StateSchemaSnapshot
+
+const val SPACE_ASSISTANT: String = "assistant"
+const val OWNER_USER: String = "user"
 
 suspend fun MemoryRuntime.ensureAssistantSpace() {
     registerStateSchema(

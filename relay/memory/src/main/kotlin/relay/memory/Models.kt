@@ -12,6 +12,3 @@ data class RecallContext(
     val taskScopeId: String = "",
     val allowCrossTask: Boolean = false,
 )
-
-const val SPACE_ASSISTANT: String = "assistant"
-const val OWNER_USER: String = "user"

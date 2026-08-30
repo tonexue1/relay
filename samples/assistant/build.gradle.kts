@@ -40,6 +40,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -63,4 +67,12 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.robolectric)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.androidx.sqlite.bundled.jvm)
+}
+
+configurations.configureEach {
+    if (name.contains("UnitTest", ignoreCase = true)) {
+        exclude(group = "androidx.sqlite", module = "sqlite-bundled-android")
+    }
 }
