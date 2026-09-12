@@ -93,7 +93,7 @@ turn policy ──指定──► agent ──utterance──► Scene ──►
 - 在场的是长活 `Agent`,不是 tool。
 - 真源是 Scene log`(speaker, text)`,不是某个 `AgentState`。
 - 每个角色每次开口前投影一次;禁止共享可变 `messages`。
-- 一轮默认说一句就停(`maxTurns = 1`)。
+- 一轮默认说一句就停(`maxToolBatches = 1`)。
 - 选人是策略:规则、用户抢话、GM、或以后的 LLM selector。runtime 只认「指定 id → 收一句 → 追加 Scene」。
 - 账本:世界 / 关系旗帜(导演场景);秘密按角色分 artifact。
 

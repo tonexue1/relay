@@ -250,14 +250,14 @@ relay/agent-core         不变:单 agent loop
 relay/llm Provider
 ```
 
-不放进 `relay-llm`:那一层的契约是「一个模型后端」。不把 `Agent` 改成 `Provider`:`Agent.kt` 已禁止套娃。不把拓扑塞进现有 `AgentConfig`:那是单 loop 的旋钮(`maxTurns` / `toolExecution`),和「几个 agent、怎么连」不是同一类状态。
+不放进 `relay-llm`:那一层的契约是「一个模型后端」。不把 `Agent` 改成 `Provider`:`Agent.kt` 已禁止套娃。不把拓扑塞进现有 `AgentConfig`:那是单 loop 的旋钮(`maxToolBatches` / `toolExecution`),和「几个 agent、怎么连」不是同一类状态。
 
 命名倾向 `orchestra` 而不是 `multi-agent`:后者太泛,且和「Agent 模块」在 playground 里撞名。可再议。
 
 ### 6.2 v1 机制(只列必须有的)
 
 1. **`Pipeline`**:`List<Step>`,每步一个 `Agent`(或任意 `suspend (String) -> String`)。步与步只传文本/结构化产出,不共享 `AgentState`。
-2. **`Supervisor`**:一个 lead `Agent`;workers 注册成 `Tool`(或 `AgentTool`)。Lead 的 `maxTurns` 就是派工轮次上限。并行走现有 `ToolExecutionMode.Parallel`。
+2. **`Supervisor`**:一个 lead `Agent`;workers 注册成 `Tool`(或 `AgentTool`)。Lead 的 `maxToolBatches` 就是派工轮次上限。并行走现有 `ToolExecutionMode.Parallel`。
 3. **`TeamEvent`**:在 `AgentEvent` 外包一层 `WorkerStart/End`、`StepStart/End`,playground 才能画「谁在跑」。不要改 `AgentEvent` 语义。
 4. **预算**:`maxWorkers`、`maxWorkerTurns`、总超时。Anthropic 的教训是 lead 不会自己收手。
 5. **取消**:coroutine `Job` 取消必须打到正在跑的子 `Agent`。单 agent 已经 `ensureActive()`;orchestra 要会 `cancelChildren`。

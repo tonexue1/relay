@@ -65,7 +65,7 @@
 不要做的:
 
 - 把整场 scene 复制进每个角色的 `messages` 当真源。真源是 Scene;角色 `messages` 只是投影缓存,或每次从 Scene 重建。
-- 每个角色都跑一遍完整 tool loop。角色模拟默认 **无 tool 或极少 tool**(查自己的 lore)。`maxTurns` 应是 1:说完一句就停。
+- 每个角色都跑一遍完整 tool loop。角色模拟默认 **无 tool 或极少 tool**(查自己的 lore)。`maxToolBatches` 应是 1:说完一句就停。
 - LLM selector 当默认。多一次云调用选「谁说话」又贵又抢戏;2–4 人先规则。
 
 Token:Scene 是一份,投影是 N 份。所以 **角色数要硬顶**(建议 ≤4),trim 裁 Scene 的远古对白,不裁 card。
@@ -122,7 +122,7 @@ UI 不要塞进现在的 playground 模块卡。这是独立 sample:`samples/rol
 7. Turn policy(先规则,后 selector)
 8. 按角色投影:card ∪ private ∪ scene
 9. `Speaker*` 事件和按角色气泡
-10. `maxTurns = 1` 的说话契约(说完就停)
+10. `maxToolBatches = 1` 的说话契约(说完就停)
 
 **C 再加:** GM 写世界 ledger、指定 speaker、旁白通道。
 

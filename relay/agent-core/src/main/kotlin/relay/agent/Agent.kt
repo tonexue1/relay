@@ -26,7 +26,7 @@ import relay.llm.tool.ToolCallAccumulator
  * Stateful agent loop over a [Provider].
  *
  * Working memory is [state.messages]. Each [prompt] / [continueRun] emits the pi-style
- * lifecycle and dispatches tools until the model stops or [AgentConfig.maxTurns] is hit.
+ * lifecycle and dispatches tools until the model stops or [AgentConfig.maxToolBatches] is hit.
  * A tool call past that budget is not executed: it receives [TOOL_BUDGET_EXHAUSTED] and
  * the next LLM call is forced to write (no tools). The agent is not itself a [Provider]
  * -- wrapping it as one would nest loops.
@@ -46,7 +46,7 @@ class Agent(
         tools = tools,
     )
 
-    private val maxTurns: Int = config.maxTurns.coerceAtLeast(1)
+    private val maxToolBatches: Int = config.maxToolBatches.coerceAtLeast(1)
     private val toolExecution: ToolExecutionMode = config.toolExecution
     private val temperature: Double? = config.temperature
     private val maxTokens: Int? = config.maxTokens
@@ -158,7 +158,7 @@ class Agent(
                     return
                 }
 
-                if (toolBatches >= maxTurns) {
+                if (toolBatches >= maxToolBatches) {
                     val refused = refuseToolBatch(folded.message.toolCalls)
                     emit(AgentEvent.TurnEnd(folded.message, refused))
                     emit(AgentEvent.TurnStart)
@@ -209,7 +209,7 @@ class Agent(
     private suspend fun kotlinx.coroutines.flow.FlowCollector<AgentEvent>.refuseToolBatch(
         calls: List<ToolCall>,
     ): List<Message> {
-        val result = TOOL_BUDGET_EXHAUSTED.format(maxTurns)
+        val result = TOOL_BUDGET_EXHAUSTED.format(maxToolBatches)
         return calls.map { call ->
             emit(AgentEvent.ToolExecutionStart(call))
             emit(AgentEvent.ToolExecutionEnd(call, result, isError = false))
@@ -344,4 +344,4 @@ class Agent(
 }
 
 internal const val TOOL_BUDGET_EXHAUSTED =
-    "Tool budget exhausted (maxTurns=%d). This tool was not executed. Summarize your findings now. Do not call more tools."
+    "Tool budget exhausted (maxToolBatches=%d). This tool was not executed. Summarize your findings now. Do not call more tools."

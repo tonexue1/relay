@@ -165,7 +165,7 @@ text 和 tool_calls 是同一路流上的两种 chunk,`ChatChunk.Text` 路径原
 ### 3.8 三个工程要点
 - **让模型知道何时用**:工具 `description` 写清触发场景 + system prompt 引导"能画就别打 markdown 表";拿到 ack 后别用文字复述图里的数。
 - **持久化/回放**:widget 就是 message history 里的 tool call,**天然被持久化**,重放 transcript 自动重渲;大 spec 可 dedupe 进 `ArtifactStore` 留 ref。
-- **单一事实源 + maxTurns**:`ToolDef.parameters` 与 `WidgetSpec` 渲染器读的字段必须同源(v1 手写贴紧,后续一处派生)。要"文本→图→叙述→再图"多段交错,`maxTurns` 需 ≥2。
+- **单一事实源 + maxToolBatches**:`ToolDef.parameters` 与 `WidgetSpec` 渲染器读的字段必须同源(v1 手写贴紧,后续一处派生)。要"文本→图→叙述→再图"多段交错,`maxToolBatches` 需 ≥2。
 
 ### 3.9 对接清单(对接面极小)
 关键原则:**`agent-core` 不 import ui-kit**。渲染器和 UI tools 都在 `:relay:ui-kit`，宿主 ViewModel 只监听事件、推进 `OrderedTurnReducer`、把 `WidgetHost` 画进对话。对接只动这几处,**核心零改**:
@@ -233,7 +233,7 @@ sequenceDiagram
 
 **U3 · 流式交错顺序正确性(纯工程,必过)**
 - 问题:多 turn(文本→图→叙述→再图)下,有序 item + 活草稿能否保序、不吞文本、不错位?
-- 实验:用 `ScriptedProvider` 造 `[text][toolcall][text][toolcall]` 序列,断言最终 item 顺序与流式增量;真机跑 `maxTurns≥2`。
+- 实验:用 `ScriptedProvider` 造 `[text][toolcall][text][toolcall]` 序列,断言最终 item 顺序与流式增量;真机跑 `maxToolBatches≥2`。
 - 阈值:顺序与内容 **100% 正确**(确定性工程)。
 - 成本:0.5–1 天。
 

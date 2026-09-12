@@ -235,7 +235,7 @@ class AgentTest {
     }
 
     @Test
-    fun toolCallPastMaxTurnsReceivesSummarizeResult() = runTest {
+    fun toolCallPastMaxToolBatchesReceivesSummarizeResult() = runTest {
         var echoCount = 0
         val provider = ScriptedProvider(
             listOf(
@@ -246,7 +246,7 @@ class AgentTest {
         )
         val agent = Agent(
             provider = provider,
-            config = AgentConfig(model = "fake-model", maxTurns = 1),
+            config = AgentConfig(model = "fake-model", maxToolBatches = 1),
             tools = listOf(FunTool("echo") { echoCount++; "ok" }),
             transformContext = { it },
         )
@@ -282,7 +282,7 @@ class AgentTest {
             provider = provider,
             config = AgentConfig(
                 model = "fake-model",
-                maxTurns = 2,
+                maxToolBatches = 2,
                 toolExecution = ToolExecutionMode.Sequential,
             ),
             tools = listOf(

@@ -108,7 +108,7 @@ private fun ConfigCard(state: AgentTestUiState, viewModel: AgentTestViewModel) {
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            text = "模型 ${state.model} · 工具含 web_search / fetch_url · maxTurns=12",
+            text = "模型 ${state.model} · 工具含 web_search / fetch_url · maxToolBatches=12",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

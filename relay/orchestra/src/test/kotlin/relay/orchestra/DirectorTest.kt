@@ -36,7 +36,7 @@ class DirectorTest {
     private fun member(id: String, provider: ScriptedProvider) = GroupChat.Member(id) { transform ->
         Agent(
             provider = provider,
-            config = AgentConfig(model = "fake-model", maxTurns = 1),
+            config = AgentConfig(model = "fake-model", maxToolBatches = 1),
             transformContext = transform,
         )
     }

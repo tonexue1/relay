@@ -158,7 +158,7 @@ class AgentTestViewModel : ViewModel() {
             config = AgentConfig(
                 model = state.model,
                 systemPrompt = DEMO_SYSTEM_PROMPT,
-                maxTurns = 12,
+                maxToolBatches = 12,
                 timeoutMillis = 90_000,
             ),
             tools = toolbox.tools(),

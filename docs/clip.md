@@ -86,7 +86,7 @@
 | brief 写成「research X」，两人搜同一件事 | lead 派工必须带：目标、输出格式、用哪些源、**不要碰的边界** |
 | 查询又长又窄，0 命中 | scout prompt：先短宽查询，看 SERP 再收窄；一次并行 2–3 个 `web_search` |
 | 工人原文把 lead 撑爆（电话游戏） | 已有：超 400 字进 artifact，lead 只见 JSON + ref |
-| 没完没了搜 | scout `maxTurns = 6`；够 3 条可靠 URL 就停 |
+| 没完没了搜 | scout `maxToolBatches = 6`；够 3 条可靠 URL 就停 |
 | lead 自己去搜，并行白做 | **lead 没有 `web_search`**，tool 只有工人 |
 
 Clip 角色（全是云 DeepSeek，S2 先同一模型；分大小模型后置）：
@@ -106,7 +106,7 @@ Clip 角色（全是云 DeepSeek，S2 先同一模型；分大小模型后置）
 | 缺口 | 我们怎么处理 | 不该假装成 |
 |---|---|---|
 | 同一 `scout` 并行 Call，artifact 名曾是 `$workerId/output`，会互盖 | **已修**：`$workerId/$toolCallId`。单测 `parallelCallsToSameWorkerWriteDistinctArtifacts` | sample 里注册 scout_1/2/3 三个假角色 |
-| `WorkerSpec.maxTurns` 没有任何调用方读取 | spawn 闭包里写 `AgentConfig.maxTurns` | 以为 WorkerSpec 会限制工人 |
+| `WorkerSpec.maxToolBatches` 没有任何调用方读取 | spawn 闭包里写 `AgentConfig.maxToolBatches` | 以为 WorkerSpec 会限制工人 |
 | `Supervisor` 从不写 `TeamLedger.plan` | S2 不依赖 ledger.plan；计划在主编第一轮话里 | 以为有 Memory |
 | lead 只拿到 `WorkerReturn` JSON（3 行摘要 + ref），**没有**读 artifact 的 tool | sample 在 `spawnLead` 里额外挂 `read_artifact`（`ArtifactStore.get` 已有） | 改 AgentTool 把全文塞回 lead |
 | 不能运行时 new 一个 WorkerSpec | 反复 Call 同一个 `scout`，靠 brief 区分 | 动态 spawn API（后置） |

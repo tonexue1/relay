@@ -55,7 +55,7 @@ class YieldTest {
         val providerC = ScriptedProvider(listOf { ScriptedProvider.text("ok") })
         val agentC = Agent(
             provider = providerC,
-            config = AgentConfig(model = "fake-model", maxTurns = 1),
+            config = AgentConfig(model = "fake-model", maxToolBatches = 1),
             transformContext = projectIntoContext(scene) { s ->
                 s.lines
                     .filter { it.speakerId != "secret" }
@@ -85,14 +85,14 @@ class YieldTest {
                 GroupChat.Member("A") { tx ->
                     Agent(
                         provider = providerA,
-                        config = AgentConfig(model = "fake-model", maxTurns = 1),
+                        config = AgentConfig(model = "fake-model", maxToolBatches = 1),
                         transformContext = tx,
                     )
                 },
                 GroupChat.Member("B") { tx ->
                     Agent(
                         provider = providerB,
-                        config = AgentConfig(model = "fake-model", maxTurns = 1),
+                        config = AgentConfig(model = "fake-model", maxToolBatches = 1),
                         transformContext = tx,
                     )
                 },
@@ -130,14 +130,14 @@ class YieldTest {
                 GroupChat.Member("A") { tx ->
                     Agent(
                         provider = providerA,
-                        config = AgentConfig(model = "fake-model", maxTurns = 1),
+                        config = AgentConfig(model = "fake-model", maxToolBatches = 1),
                         transformContext = tx,
                     )
                 },
                 GroupChat.Member("B") { tx ->
                     Agent(
                         provider = providerB,
-                        config = AgentConfig(model = "fake-model", maxTurns = 1),
+                        config = AgentConfig(model = "fake-model", maxToolBatches = 1),
                         transformContext = tx,
                     )
                 },
@@ -158,7 +158,7 @@ class YieldTest {
         provider: ScriptedProvider,
     ): Agent = Agent(
         provider = provider,
-        config = AgentConfig(model = "fake-model", maxTurns = 1),
+        config = AgentConfig(model = "fake-model", maxToolBatches = 1),
         transformContext = projectIntoContext(scene) { fullScene(it) },
     )
 

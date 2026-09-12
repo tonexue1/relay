@@ -33,7 +33,7 @@ class LiveUiSpecEvalTest {
             config = AgentConfig(
                 model = DeepSeek.CHAT,
                 systemPrompt = "按用户要求选择最合适的 UI 或产物工具。需要结构化显示时必须调用工具，不要用纯文本代替。",
-                maxTurns = 4,
+                maxToolBatches = 4,
                 timeoutMillis = 90_000,
             ),
             tools = uiArtifactTools(repository),

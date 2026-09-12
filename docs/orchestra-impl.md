@@ -71,7 +71,7 @@ class AgentTool(
 `execute(id, argumentsJson)`:
 
 1. 把 `argumentsJson` 当成任务说明(或解出 `task` 字段)。
-2. `spawn()` 出一个干净 `Agent`(`maxTurns = maxWorkerTurns`,自己的 tools / provider)。
+2. `spawn()` 出一个干净 `Agent`(`maxToolBatches = maxWorkerTurns`,自己的 tools / provider)。
 3. `agent.prompt(task).collect { events.send(CallChild(workerId, it)) }`。
 4. 收 `AgentResult.text` → 收成短 `WorkerReturn`(status / findings / unknowns / refs)。超长正文 `artifacts.put`,结果里只留 ref。
 5. `ledger` 记一条 assignment。
@@ -128,7 +128,7 @@ fun interface TurnPolicy {
 
 class Resident(
     val id: String,
-    val agent: Agent,            // 长活,maxTurns = 1
+    val agent: Agent,            // 长活,maxToolBatches = 1
     val project: (Scene) -> String,  // 本轮塞进 transformContext 的可见场
 )
 ```
@@ -148,7 +148,7 @@ class Resident(
 3. 从 `MessageEnd(assistant)` 抽出 text → `scene.append` → 发 `TeamEvent.Utterance`。
 4. **回卷**:从 `state.messages` 去掉最后这条 user tick + assistant。居民只留下 private(关系、秘密)。公开对白只活在 Scene。
 
-`maxTurns = 1`,默认无 tool。说完就停。
+`maxToolBatches = 1`,默认无 tool。说完就停。
 
 用户插话:业务把用户句 `scene.append(Utterance("user", text))`,再 `policy.next(userJustSpoke = true)`。
 

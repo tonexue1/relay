@@ -94,7 +94,7 @@ class WerewolfViewModel : ViewModel() {
                 config = AgentConfig(
                     model = state.model,
                     systemPrompt = "你在玩狼人杀。你只知道自己的座位号和暗牌；别人只有号，没有官方身份。不要当主持人，不要改规则。",
-                    maxTurns = 1,
+                    maxToolBatches = 1,
                     timeoutMillis = 60_000,
                 ),
                 transformContext = transform,

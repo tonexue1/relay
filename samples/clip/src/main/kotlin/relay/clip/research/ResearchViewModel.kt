@@ -108,7 +108,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                     config = AgentConfig(
                         model = DeepSeek.CHAT,
                         systemPrompt = LEAD_SYSTEM,
-                        maxTurns = 10,
+                        maxToolBatches = 10,
                         timeoutMillis = 120_000,
                     ),
                     tools = workerTools + readArtifactTool(artifacts),
@@ -124,7 +124,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                             config = AgentConfig(
                                 model = DeepSeek.CHAT,
                                 systemPrompt = SCOUT_SYSTEM,
-                                maxTurns = 6,
+                                maxToolBatches = 6,
                                 toolExecution = ToolExecutionMode.Sequential,
                                 timeoutMillis = 90_000,
                             ),

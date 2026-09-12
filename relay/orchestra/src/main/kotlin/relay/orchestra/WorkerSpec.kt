@@ -7,5 +7,5 @@ data class WorkerSpec(
     val id: String,
     val description: String,
     val spawn: () -> Agent,
-    val maxTurns: Int = 4,
+    val maxToolBatches: Int = 4,
 )

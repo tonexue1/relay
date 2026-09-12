@@ -42,7 +42,7 @@ class WerewolfMatchTest {
         val match = WerewolfMatch(WerewolfEngine(compactTable())) { id, transform ->
             Agent(
                 provider = providers[id] ?: silent,
-                config = AgentConfig(model = "fake-model", maxTurns = 1),
+                config = AgentConfig(model = "fake-model", maxToolBatches = 1),
                 transformContext = transform,
             )
         }

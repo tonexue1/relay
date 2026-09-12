@@ -52,7 +52,7 @@ class AgentToolTest {
                     spawn = {
                         Agent(
                             provider = workerProvider,
-                            config = AgentConfig(model = "fake-model", maxTurns = 4),
+                            config = AgentConfig(model = "fake-model", maxToolBatches = 4),
                             transformContext = { it },
                         )
                     },
@@ -128,7 +128,7 @@ class AgentToolTest {
                     spawn = {
                         Agent(
                             provider = workerProvider,
-                            config = AgentConfig(model = "fake-model", maxTurns = 2),
+                            config = AgentConfig(model = "fake-model", maxToolBatches = 2),
                             tools = listOf(FunTool("echo") { "hit" }),
                             transformContext = { it },
                         )
@@ -206,7 +206,7 @@ class AgentToolTest {
             spawnLead = { tools ->
                 Agent(
                     provider = leadProvider,
-                    config = AgentConfig(model = "fake-model", maxTurns = 2),
+                    config = AgentConfig(model = "fake-model", maxToolBatches = 2),
                     tools = tools,
                     transformContext = { it },
                 )
@@ -218,7 +218,7 @@ class AgentToolTest {
                     spawn = {
                         Agent(
                             provider = workerProvider,
-                            config = AgentConfig(model = "fake-model", maxTurns = 4),
+                            config = AgentConfig(model = "fake-model", maxToolBatches = 4),
                             transformContext = { it },
                         )
                     },
@@ -270,7 +270,7 @@ class AgentToolTest {
                         val body = if (n.getAndIncrement() == 0) longA else longB
                         Agent(
                             provider = ScriptedProvider(listOf { ScriptedProvider.text(body) }),
-                            config = AgentConfig(model = "fake-model", maxTurns = 2),
+                            config = AgentConfig(model = "fake-model", maxToolBatches = 2),
                             transformContext = { it },
                         )
                     },
@@ -303,7 +303,7 @@ class AgentToolTest {
                         }
                     },
                 ),
-                config = AgentConfig(model = "fake-model", maxTurns = 2),
+                config = AgentConfig(model = "fake-model", maxToolBatches = 2),
                 transformContext = { it },
             )
         },

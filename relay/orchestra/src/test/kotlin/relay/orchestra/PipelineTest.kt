@@ -25,7 +25,7 @@ class PipelineTest {
                     spawn = {
                         Agent(
                             provider = gatherProvider,
-                            config = AgentConfig(model = "fake-model", maxTurns = 2),
+                            config = AgentConfig(model = "fake-model", maxToolBatches = 2),
                             transformContext = { it },
                         )
                     },
@@ -36,7 +36,7 @@ class PipelineTest {
                     spawn = {
                         Agent(
                             provider = draftProvider,
-                            config = AgentConfig(model = "fake-model", maxTurns = 2),
+                            config = AgentConfig(model = "fake-model", maxToolBatches = 2),
                             transformContext = { it },
                         )
                     },

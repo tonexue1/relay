@@ -177,7 +177,7 @@ class GroupChatViewModel : ViewModel() {
                         config = AgentConfig(
                             model = state.model,
                             systemPrompt = expertCard(seat),
-                            maxTurns = 1,
+                            maxToolBatches = 1,
                             timeoutMillis = 60_000,
                         ),
                         transformContext = transform,

@@ -11,8 +11,8 @@ sealed class AgentException(
 
     class AlreadyRunning : AgentException("Agent is already running")
 
-    class MaxTurnsExceeded(val maxTurns: Int) :
-        AgentException("Agent exceeded maxTurns=$maxTurns while the model still requested tools")
+    class MaxToolBatchesExceeded(val maxToolBatches: Int) :
+        AgentException("Agent exceeded maxToolBatches=$maxToolBatches while the model still requested tools")
 
     class CannotContinue(message: String) : AgentException(message)
 }

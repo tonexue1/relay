@@ -450,7 +450,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             config = AgentConfig(
                 model = DeepSeek.CHAT,
                 systemPrompt = SYSTEM_PROMPT,
-                maxTurns = 8,
+                maxToolBatches = 8,
                 timeoutMillis = 90_000,
             ),
             tools = (if (state.memoryEnabled) {
