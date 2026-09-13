@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import relay.llm.model.Message
+import relay.llm.model.ToolCall
 import relay.uikit.ChatTurn
 import relay.uikit.OrderedTurnReducer
 import relay.uikit.TurnItem
@@ -19,6 +20,7 @@ data class AssistantSession(
     val turns: List<ChatTurn> = emptyList(),
     val researchEntity: String? = null,
     val memoryScopeId: String = "",
+    val pendingInteraction: PendingInteractionSnapshot? = null,
 ) {
     val effectiveMemoryScopeId: String
         get() = memoryScopeId.ifBlank { id }
@@ -33,6 +35,12 @@ data class AssistantSession(
             ?.take(42)
             .orEmpty()
 }
+
+@Serializable
+data class PendingInteractionSnapshot(
+    val call: ToolCall,
+    val messages: List<Message>,
+)
 
 internal fun List<ChatTurn>.toAgentTranscript(): List<Message> = buildList {
     this@toAgentTranscript.forEach { turn ->

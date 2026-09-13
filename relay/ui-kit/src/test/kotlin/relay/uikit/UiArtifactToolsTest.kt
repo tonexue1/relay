@@ -1,9 +1,11 @@
 package relay.uikit
 
 import java.nio.file.Files
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import relay.artifacts.FileArtifactRepository
 
@@ -64,5 +66,20 @@ class UiArtifactToolsTest {
         assertEquals(ChoiceKind.MULTI, spec.questions.last().kind)
         assertEquals("根据用户当前目标确定研究路径", spec.taskAnchor)
         assertEquals(null, spec.submittedAnswers)
+    }
+
+    @Test
+    fun `renderer tool rejects an invalid widget so the agent can retry`() {
+        val repository = FileArtifactRepository(Files.createTempDirectory("ui-kit-test").toFile())
+        val table = uiArtifactTools(repository).first { it.def.name == UiToolNames.TABLE }
+
+        try {
+            runBlocking {
+                table.execute("bad-table", """{"columns":["A","B"],"rows":[["only one"]]}""")
+            }
+            fail("Invalid widget arguments must fail the tool call")
+        } catch (error: IllegalArgumentException) {
+            assertTrue(error.message.orEmpty().contains("表格列或行不合法"))
+        }
     }
 }

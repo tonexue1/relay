@@ -3,6 +3,7 @@ package relay.agent
 import relay.llm.model.ChatChunk
 import relay.llm.model.Message
 import relay.llm.model.ToolCall
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Lifecycle events for one agent run, shaped after pi-agent-core.
@@ -30,9 +31,12 @@ sealed interface AgentEvent {
 
     data class ToolExecutionStart(val call: ToolCall) : AgentEvent
 
+    data class ToolExecutionWaiting(val call: ToolCall, val eventData: JsonObject?) : AgentEvent
+
     data class ToolExecutionEnd(
         val call: ToolCall,
         val result: String,
         val isError: Boolean,
+        val eventData: JsonObject? = null,
     ) : AgentEvent
 }

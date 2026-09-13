@@ -12,9 +12,15 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import relay.agent.FunTool
 import relay.agent.Tool
+import relay.agent.ToolOutput
 import relay.artifacts.ArtifactRef
 import relay.artifacts.ArtifactRepository
 import relay.artifacts.ArtifactValidator
+
+private val widgetEventJson = Json {
+    encodeDefaults = true
+    classDiscriminator = "type"
+}
 
 object UiToolNames {
     const val MARKDOWN = "render_markdown"
@@ -94,13 +100,34 @@ fun uiArtifactTools(
     )
 }
 
-private fun rendererTool(name: String, description: String, schema: JsonObject): Tool =
-    FunTool(name, description, schema) { raw ->
-        val spec = widgetFromToolCall(name, raw)
+private fun rendererTool(name: String, description: String, schema: JsonObject): Tool = object : Tool {
+    override val def = relay.llm.model.ToolDef(name, description, schema)
+    override val waitsForUser: Boolean = name == UiToolNames.CHOICE_FORM
+
+    override suspend fun execute(toolCallId: String, argumentsJson: String): String =
+        executeOutput(toolCallId, argumentsJson).content
+
+    override suspend fun executeOutput(toolCallId: String, argumentsJson: String): ToolOutput {
+        val presentationSlotId = runCatching {
+            (Json.parseToJsonElement(argumentsJson) as JsonObject)["presentationSlotId"]
+                ?.jsonPrimitive?.content
+        }.getOrNull().orEmpty().ifBlank { toolCallId }
+        val spec = widgetFromToolCall(name, argumentsJson)
+        val invalidSpec = spec as? FallbackSpec
+        require(invalidSpec == null) {
+            """{"ok":false,"code":"INVALID_WIDGET_SPEC","reason":${Json.encodeToString(invalidSpec?.reason.orEmpty())},"retryable":true,"presentationSlotId":${Json.encodeToString(presentationSlotId)}}"""
+        }
         val fallback = WidgetParser.validate(spec)
         require(fallback == null) { fallback?.reason.orEmpty() }
-        """{"ok":true,"summary":${Json.encodeToString(spec.summary())}}"""
+        return ToolOutput(
+            content = """{"ok":true,"summary":${Json.encodeToString(spec.summary())}}""",
+            eventData = buildJsonObject {
+                put("widget", widgetEventJson.encodeToJsonElement(WidgetSpec.serializer(), spec))
+                put("presentationSlotId", presentationSlotId)
+            },
+        )
     }
+}
 
 private fun writeArtifactTool(name: String, mime: String, repository: ArtifactRepository): Tool =
     FunTool(name, "生成 UTF-8 单文件 ${if (mime == "text/html") "HTML" else "Markdown"} 产物。", writeSchema) { raw ->
@@ -147,7 +174,12 @@ private fun objectSchema(required: List<String>, properties: JsonObject): JsonOb
     put("type", "object")
     put("additionalProperties", false)
     putJsonArray("required") { required.forEach { add(Json.parseToJsonElement("\"$it\"")) } }
-    put("properties", properties)
+    put(
+        "properties",
+        JsonObject(
+            properties + ("presentationSlotId" to stringProp("重试渲染时复用先前失败的展示槽位 ID")),
+        ),
+    )
 }
 
 private fun stringProp(description: String = "") = buildJsonObject {

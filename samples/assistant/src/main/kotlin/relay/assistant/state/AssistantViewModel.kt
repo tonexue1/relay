@@ -21,6 +21,7 @@ import relay.assistant.BuildConfig
 import relay.assistant.artifact.ArtifactGroundingGate
 import relay.assistant.session.AssistantSession
 import relay.assistant.session.SessionStore
+import relay.assistant.session.PendingInteractionSnapshot
 import relay.assistant.session.toAgentTranscript
 import relay.llm.RelayLlmException
 import relay.llm.provider.DeepSeek
@@ -131,8 +132,9 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         itemId: String,
         answers: Map<String, List<String>>,
     ) {
-        if (!_uiState.value.canSend) return
+        if (_uiState.value.running) return
         var submittedMessage: String? = null
+        var interactionCallId: String? = null
         _uiState.update { state ->
             state.copy(
                 turns = state.turns.map { turn ->
@@ -154,6 +156,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                                         answers = answers,
                                         taskAnchor = taskAnchor,
                                     )
+                                    interactionCallId = widget.callId
                                     widget.copy(spec = submitted)
                                 }
                             }
@@ -164,13 +167,15 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         }
         submittedMessage?.let {
             persistActiveSession()
-            inFlight = viewModelScope.launch {
-                runTurn(
-                    input = it,
-                    captureMemory = false,
-                    automaticRecall = false,
-                    showUserTurn = false,
-                )
+            val activeAgent = agent ?: runCatching {
+                ensureAgent(_uiState.value, automaticRecall = false)
+            }.getOrNull()
+            if (activeAgent != null && activeAgent.state.pendingInteraction?.call?.id == interactionCallId) {
+                inFlight = viewModelScope.launch { resumeInteraction(activeAgent, interactionCallId!!, it) }
+            } else {
+                inFlight = viewModelScope.launch {
+                    runTurn(input = it, captureMemory = false, automaticRecall = false, showUserTurn = false)
+                }
             }
         }
     }
@@ -338,9 +343,28 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         } catch (error: Exception) {
             _uiState.update { it.copy(error = error.message ?: error.toString()) }
         } finally {
-            _uiState.update { it.copy(running = false, turns = OrderedTurnReducer.complete(it.turns)) }
+            _uiState.update {
+                it.copy(
+                    running = false,
+                    turns = if (activeAgent.state.pendingInteraction == null) OrderedTurnReducer.complete(it.turns) else it.turns,
+                )
+            }
             persistActiveSession()
             refreshMemory()
+        }
+    }
+
+    private suspend fun resumeInteraction(activeAgent: Agent, callId: String, result: String) {
+        _uiState.update { it.copy(running = true, error = null) }
+        try {
+            activeAgent.resumeInteraction(callId, result).collect { event ->
+                _uiState.update { it.copy(turns = OrderedTurnReducer.reduce(it.turns, event)) }
+            }
+        } catch (error: Exception) {
+            _uiState.update { it.copy(error = error.message ?: error.toString()) }
+        } finally {
+            _uiState.update { it.copy(running = false, turns = OrderedTurnReducer.complete(it.turns)) }
+            persistActiveSession()
         }
     }
 
@@ -363,6 +387,9 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 .orEmpty()
             val sessions = state.sessions.map { session ->
                 if (session.id == state.activeSessionId) {
+                    val pending = agent?.state?.pendingInteraction?.let { interaction ->
+                        PendingInteractionSnapshot(interaction.call, agent!!.state.messages)
+                    }
                     session.copy(
                         title = if (session.title == "新对话" && firstUserText.isNotBlank()) {
                             firstUserText.replace(Regex("\\s+"), " ").take(18)
@@ -371,6 +398,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                         },
                         updatedAt = System.currentTimeMillis(),
                         turns = state.turns,
+                        pendingInteraction = pending,
                     )
                 } else {
                     session
@@ -478,7 +506,9 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 ArtifactGroundingGate.check(call, groundingEvidence())
             },
         )
-        agent!!.state.messages = state.turns.toAgentTranscript()
+        val checkpoint = state.activeSession?.pendingInteraction
+        agent!!.state.messages = checkpoint?.messages ?: state.turns.toAgentTranscript()
+        checkpoint?.let { agent!!.restoreInteraction(it.call) }
         return agent!!
     }
 

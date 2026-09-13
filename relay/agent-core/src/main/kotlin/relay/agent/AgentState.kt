@@ -1,6 +1,8 @@
 package relay.agent
 
 import relay.llm.model.Message
+import relay.llm.model.ToolCall
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Mutable working memory for an [Agent].
@@ -30,4 +32,9 @@ class AgentState(
 
     var isRunning: Boolean = false
         internal set
+
+    var pendingInteraction: PendingInteraction? = null
+        internal set
 }
+
+data class PendingInteraction(val call: ToolCall, val eventData: JsonObject?)

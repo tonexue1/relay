@@ -15,6 +15,13 @@ class ProcessDisplayPolicyTest {
     }
 
     @Test
+    fun `running renderer is summarized as content generation`() {
+        val process = process(UiToolNames.CHART, ProcessStatus.RUNNING)
+
+        assertEquals("正在生成 1 项内容", processSummary(listOf(process)))
+    }
+
+    @Test
     fun `presentation failures remain visible`() {
         val process = process(UiToolNames.TABLE, ProcessStatus.FAILED)
 

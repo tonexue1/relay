@@ -77,6 +77,24 @@ class Agent(
         emitAllRun(startingUser = null)
     }
 
+    fun resumeInteraction(toolCallId: String, result: String): Flow<AgentEvent> = flow {
+        val pending = state.pendingInteraction
+            ?: throw AgentException.CannotContinue("no pending interaction")
+        require(pending.call.id == toolCallId) { "interaction '$toolCallId' is not pending" }
+        state.pendingInteraction = null
+        val message = Message.toolResult(toolCallId, result)
+        append(message)
+        emit(AgentEvent.ToolExecutionEnd(pending.call, result, isError = false, eventData = pending.eventData))
+        emit(AgentEvent.MessageStart(message))
+        emit(AgentEvent.MessageEnd(message))
+        emitAllRun(startingUser = null)
+    }
+
+    fun restoreInteraction(call: ToolCall) {
+        check(!state.isRunning) { "cannot restore while running" }
+        state.pendingInteraction = PendingInteraction(call, null)
+    }
+
     suspend fun run(input: String): AgentResult {
         var text: String? = null
         var finishReason: FinishReason? = null
@@ -155,6 +173,26 @@ class Agent(
                 if (folded.message.toolCalls.isEmpty()) {
                     emit(AgentEvent.TurnEnd(folded.message, emptyList()))
                     emit(AgentEvent.AgentEnd(state.messages))
+                    return
+                }
+
+                val waitingCall = folded.message.toolCalls.firstOrNull { call ->
+                    state.tools.firstOrNull { it.def.name == call.name }?.waitsForUser == true
+                }
+                if (waitingCall != null) {
+                    emit(AgentEvent.ToolExecutionStart(waitingCall))
+                    val tool = requireNotNull(state.tools.firstOrNull { it.def.name == waitingCall.name })
+                    val outcome = runTool(tool, waitingCall)
+                    if (outcome.isError) {
+                        val message = Message.toolResult(waitingCall.id, outcome.result)
+                        append(message)
+                        emit(AgentEvent.ToolExecutionEnd(waitingCall, outcome.result, true))
+                        emit(AgentEvent.MessageStart(message)); emit(AgentEvent.MessageEnd(message))
+                        continue
+                    }
+                    state.pendingInteraction = PendingInteraction(waitingCall, outcome.eventData)
+                    emit(AgentEvent.ToolExecutionWaiting(waitingCall, outcome.eventData))
+                    emit(AgentEvent.TurnEnd(folded.message, emptyList()))
                     return
                 }
 
@@ -279,7 +317,7 @@ class Agent(
                 currentCoroutineContext().ensureActive()
                 val outcome = runTool(item.tool, item.call)
                 outcomes[item.index] = outcome
-                emit(AgentEvent.ToolExecutionEnd(item.call, outcome.result, outcome.isError))
+                emit(AgentEvent.ToolExecutionEnd(item.call, outcome.result, outcome.isError, outcome.eventData))
             }
         } else {
             val completed = Collections.synchronizedList(mutableListOf<Pair<PendingCall, ToolOutcome>>())
@@ -293,7 +331,7 @@ class Agent(
             }
             for ((item, outcome) in completed) {
                 outcomes[item.index] = outcome
-                emit(AgentEvent.ToolExecutionEnd(item.call, outcome.result, outcome.isError))
+                emit(AgentEvent.ToolExecutionEnd(item.call, outcome.result, outcome.isError, outcome.eventData))
             }
         }
 
@@ -306,7 +344,9 @@ class Agent(
     private suspend fun runTool(tool: Tool, call: ToolCall): ToolOutcome =
         try {
             coroutineContext.ensureActive()
-            ToolOutcome(tool.execute(call.id, call.argumentsJson), isError = false)
+            tool.executeOutput(call.id, call.argumentsJson).let { output ->
+                ToolOutcome(output.content, isError = false, eventData = output.eventData)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -338,7 +378,11 @@ class Agent(
         val finishReason: FinishReason,
     )
 
-    private data class ToolOutcome(val result: String, val isError: Boolean)
+    private data class ToolOutcome(
+        val result: String,
+        val isError: Boolean,
+        val eventData: kotlinx.serialization.json.JsonObject? = null,
+    )
 
     private data class PendingCall(val index: Int, val call: ToolCall, val tool: Tool)
 }

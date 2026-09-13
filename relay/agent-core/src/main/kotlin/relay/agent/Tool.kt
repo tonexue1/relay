@@ -16,9 +16,24 @@ interface Tool {
     val def: ToolDef
     val label: String get() = def.name
     val executionMode: ToolExecutionMode? get() = null
+    val waitsForUser: Boolean get() = false
 
     suspend fun execute(toolCallId: String, argumentsJson: String): String
+
+    /**
+     * Executes a tool and optionally emits data for lifecycle-event consumers.
+     *
+     * [ToolOutput.eventData] never enters the model transcript. This keeps presentation data
+     * available to clients without making the model parse or retain it as a tool result.
+     */
+    suspend fun executeOutput(toolCallId: String, argumentsJson: String): ToolOutput =
+        ToolOutput(execute(toolCallId, argumentsJson))
 }
+
+data class ToolOutput(
+    val content: String,
+    val eventData: JsonObject? = null,
+)
 
 /**
  * JSON Schema for a function with no arguments.

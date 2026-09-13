@@ -39,6 +39,7 @@ sealed interface TurnItem {
         val argumentsSummary: String,
         val status: ProcessStatus = ProcessStatus.RUNNING,
         val resultSummary: String = "",
+        val presentationSlotId: String? = null,
     ) : TurnItem
 
     @Serializable
@@ -96,6 +97,7 @@ object OrderedTurnReducer {
                 }
             }
             is AgentEvent.ToolExecutionStart -> onToolStart(turn, event)
+            is AgentEvent.ToolExecutionWaiting -> onToolWaiting(turn, event)
             is AgentEvent.ToolExecutionEnd -> onToolEnd(turn, event)
             is AgentEvent.AgentEnd -> turn.copy(complete = true)
             else -> turn
@@ -132,18 +134,21 @@ object OrderedTurnReducer {
 
     private fun onToolStart(turn: ChatTurn, event: AgentEvent.ToolExecutionStart): ChatTurn {
         val call = event.call
+        val slotId = if (call.name in UiToolNames.renderers) {
+            runCatching { Json.parseToJsonElement(call.argumentsJson).jsonObject["presentationSlotId"]?.jsonPrimitive?.content }
+                .getOrNull().orEmpty().ifBlank { call.id }
+        } else {
+            null
+        }
         val process = TurnItem.Process(
-            id = "process-${call.id}",
+            id = "process-${slotId ?: call.id}",
             callId = call.id,
             label = call.name,
             argumentsSummary = call.argumentsJson.replace(Regex("\\s+"), " ").take(160),
+            presentationSlotId = slotId,
         )
         val extra: TurnItem? = when {
-            call.name in UiToolNames.renderers -> {
-                val spec = runCatching { widgetFromToolCall(call.name, call.argumentsJson) }
-                    .getOrElse { FallbackSpec("组件解析失败", it.message.orEmpty(), call.id) }
-                TurnItem.Widget("widget-${call.id}", call.id, spec)
-            }
+            call.name in UiToolNames.renderers -> null
             call.name in UiToolNames.writers -> {
                 val args = runCatching { Json.parseToJsonElement(call.argumentsJson).jsonObject }.getOrNull()
                 TurnItem.Artifact(
@@ -160,7 +165,11 @@ object OrderedTurnReducer {
             }
             else -> null
         }
-        return turn.copy(items = turn.items + listOfNotNull(process, extra))
+        val retained = if (slotId == null) turn.items else turn.items.filterNot {
+            it is TurnItem.Process && it.presentationSlotId == slotId ||
+                it is TurnItem.Widget && it.id == "widget-$slotId"
+        }
+        return turn.copy(items = retained + listOfNotNull(process, extra))
     }
 
     private fun onToolEnd(turn: ChatTurn, event: AgentEvent.ToolExecutionEnd): ChatTurn {
@@ -169,7 +178,7 @@ object OrderedTurnReducer {
         } else {
             null
         }
-        return turn.copy(items = turn.items.map { item ->
+        val items = turn.items.map { item ->
             when {
                 item is TurnItem.Process && item.callId == event.call.id -> item.copy(
                     status = if (event.isError) ProcessStatus.FAILED else ProcessStatus.SUCCEEDED,
@@ -188,6 +197,27 @@ object OrderedTurnReducer {
                 )
                 else -> item
             }
-        })
+        }
+        val hasWidgetForCall = items.any { it is TurnItem.Widget && it.callId == event.call.id }
+        val widget = if (!event.isError && !hasWidgetForCall && event.call.name in UiToolNames.renderers) {
+            val eventData = event.eventData
+            eventData?.get("widget")
+                ?.let { WidgetParser.parse(it.toString()) }
+                ?.takeUnless { it is FallbackSpec }
+                ?.let { spec ->
+                    val slotId = eventData["presentationSlotId"]?.jsonPrimitive?.content
+                        ?: event.call.id
+                    TurnItem.Widget("widget-$slotId", event.call.id, spec)
+                }
+        } else {
+            null
+        }
+        return turn.copy(items = items + listOfNotNull(widget))
+    }
+
+    private fun onToolWaiting(turn: ChatTurn, event: AgentEvent.ToolExecutionWaiting): ChatTurn {
+        val spec = event.eventData?.get("widget")?.let { WidgetParser.parse(it.toString()) }
+            ?.takeUnless { it is FallbackSpec } ?: return turn
+        return turn.copy(items = turn.items + TurnItem.Widget("widget-${event.call.id}", event.call.id, spec))
     }
 }

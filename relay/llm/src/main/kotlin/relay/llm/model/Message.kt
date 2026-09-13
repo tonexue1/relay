@@ -1,7 +1,9 @@
 package relay.llm.model
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.Serializable
 
+@Serializable
 enum class Role { SYSTEM, USER, ASSISTANT, TOOL }
 
 /**
@@ -10,6 +12,7 @@ enum class Role { SYSTEM, USER, ASSISTANT, TOOL }
  * An assistant turn that requests tools carries [toolCalls] with a null [content].
  * A [Role.TOOL] turn carries the tool result in [content] and must set [toolCallId].
  */
+@Serializable
 data class Message(
     val role: Role,
     val content: String? = null,
@@ -29,6 +32,7 @@ data class Message(
 }
 
 /** A tool invocation requested by the model. [argumentsJson] is the raw JSON object emitted by the model. */
+@Serializable
 data class ToolCall(
     val id: String,
     val name: String,
