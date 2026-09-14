@@ -26,7 +26,7 @@ enum class RiskTier { LOW, HIGH }
 
 enum class TargetLifecycle { CURRENT, CANDIDATE }
 
-enum class MemoryKind { STATE, EPISODE, REFLECTION }
+enum class MemoryKind { STATE, EPISODE, REFLECTION, FACT }
 
 enum class SourceType { RAW_EVENT, USER_EDIT, HOST_TXN, IMPORT }
 
@@ -293,3 +293,46 @@ object MemoryCodes {
     const val MISSING_EVIDENCE = "MISSING_EVIDENCE"
     const val EMBEDDING_FAILED = "EMBEDDING_FAILED"
 }
+
+data class AddMemory(
+    val spaceId: String,
+    val ownerId: String,
+    val text: String,
+    val linkedMemoryIds: List<String> = emptyList(),
+    val vector: FloatArray? = null,
+    val embeddingModelId: String = "default",
+    val rawEventIds: List<String> = emptyList(),
+    val writerId: String = "host",
+    val at: ClockStamp = ClockStamp(ClockDomain.WALL_CLOCK, System.currentTimeMillis()),
+)
+
+data class AddMemoryResult(
+    val id: String,
+    val created: Boolean,
+)
+
+enum class LexicalScorer {
+    COVERAGE,
+    BM25,
+}
+
+data class SearchMemories(
+    val spaceId: String,
+    val ownerId: String,
+    val query: String,
+    val queryVector: FloatArray? = null,
+    val embeddingModelId: String = "default",
+    val at: ClockStamp,
+    val limit: Int = 3,
+    val latestOnly: Boolean = true,
+    val minScore: Double = 0.5,
+    val lexical: LexicalScorer = LexicalScorer.BM25,
+)
+
+data class MemoryHit(
+    val id: String,
+    val text: String,
+    val score: Double,
+    val createdAt: Long,
+    val linkedMemoryIds: List<String> = emptyList(),
+)

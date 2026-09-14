@@ -23,6 +23,7 @@ interview/
 eval/dream/.venv/
 eval/dream/out/
 eval/memory/out/
+eval/memory/data/**/*.json
 __pycache__/
 *.pyc
 

@@ -10,6 +10,8 @@ interface MemoryRuntime {
     suspend fun getStates(request: StateReadRequest): StateReadResult
     suspend fun getStateHistory(request: StateHistoryRequest): List<StateVersion>
     suspend fun putEmbedding(put: EmbeddingPut): Boolean
+    suspend fun addMemory(add: AddMemory): AddMemoryResult
+    suspend fun searchMemories(request: SearchMemories): List<MemoryHit>
     suspend fun indexHealth(spaceId: String): IndexHealth
     suspend fun listItems(spaceId: String, ownerId: String): List<MemoryRecord>
     suspend fun pendingRawCount(spaceId: String): Int

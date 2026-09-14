@@ -8,16 +8,21 @@ import kotlin.math.sqrt
 import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.putJsonArray
 import relay.memory.MemoryScope
+import relay.memory.api.AddMemory
+import relay.memory.api.AddMemoryResult
 import relay.memory.api.ClockDomain
-import relay.memory.api.ClockStamp
 import relay.memory.api.CommitResult
 import relay.memory.api.EmbeddingPut
+import relay.memory.api.MemoryHit
+import relay.memory.api.SearchMemories
 import relay.memory.api.EpisodeCommand
-import relay.memory.api.EvidenceRef
 import relay.memory.api.FieldRegistration
 import relay.memory.api.IndexHealth
 import relay.memory.api.LifecycleState
@@ -291,6 +296,146 @@ class SqliteLedgerRuntime(
         )
         if (job != null) dao.setJobStatus(job.id, "COMPLETED", now)
         true
+    }
+
+    override suspend fun addMemory(add: AddMemory): AddMemoryResult = lock.withLock {
+        dao.withTx {
+            space(add.spaceId) ?: throw MemoryFault(MemoryCodes.UNKNOWN_SPACE)
+            val text = add.text.trim()
+            if (text.isEmpty()) throw MemoryFault(MemoryCodes.MISSING_SOURCE, "empty memory")
+            val hash = sha256Hex(normalizeText(text))
+            val key = "fact:$hash"
+            factByKey(add.spaceId, add.ownerId, key)?.let {
+                return@withTx AddMemoryResult(it.id, created = false)
+            }
+            for (linked in add.linkedMemoryIds) {
+                val row = item(linked) ?: throw MemoryFault(MemoryCodes.SOURCE_NOT_FOUND)
+                if (row.spaceId != add.spaceId || row.ownerId != add.ownerId) {
+                    throw MemoryFault(MemoryCodes.SOURCE_NOT_FOUND)
+                }
+            }
+            val sources = if (add.rawEventIds.isEmpty()) {
+                listOf(relay.memory.api.SourceRef(SourceType.HOST_TXN, UUID.randomUUID().toString()))
+            } else {
+                add.rawEventIds.map { relay.memory.api.SourceRef(SourceType.RAW_EVENT, it) }
+            }
+            requireSources(sources, add.spaceId)
+            val now = clock()
+            val id = newId()
+            val payload = buildFactPayload(add.linkedMemoryIds)
+            insertItem(
+                MemoryItemEntity(
+                    id = id,
+                    spaceId = add.spaceId,
+                    ownerId = add.ownerId,
+                    kind = MemoryKind.FACT.name,
+                    fieldId = null,
+                    memoryKey = null,
+                    payloadJson = payload,
+                    text = text,
+                    rendererId = "",
+                    rendererVersion = "",
+                    scope = MemoryScope.PROFILE.name,
+                    scopeId = "",
+                    isCurrent = 0,
+                    lifecycleState = LifecycleState.ACTIVE.name,
+                    confidence = 1.0,
+                    salience = 0.5,
+                    clockDomain = add.at.domain.name,
+                    occurredAt = add.at.t,
+                    validFrom = add.at.t,
+                    validTo = null,
+                    createdAt = now,
+                    updatedAt = now,
+                    supersedesId = add.linkedMemoryIds.firstOrNull(),
+                    retractedAt = null,
+                    writerKind = MemoryWriterKind.EXTRACTOR.name,
+                    writerId = add.writerId,
+                    writerRunId = key,
+                    mirroredSourceRevision = null,
+                    payloadHash = sha256Hex(payload),
+                    textHash = sha256Hex(text),
+                    idempotencyKey = key,
+                ),
+            )
+            attach(id, sources, emptyList(), text)
+            val vector = add.vector
+            if (vector != null && vector.isNotEmpty()) {
+                upsertModel(
+                    EmbeddingModelEntity(
+                        modelId = add.embeddingModelId,
+                        modelVersion = "1",
+                        dimensions = vector.size,
+                        tokenizerVersion = "",
+                        queryPrefix = "",
+                        documentPrefix = "",
+                        normalization = "l2",
+                        active = 1,
+                    ),
+                )
+                upsertEmbedding(
+                    MemoryEmbeddingEntity(
+                        memoryId = id,
+                        modelId = add.embeddingModelId,
+                        textHash = sha256Hex(text),
+                        vectorBlob = vector.toBytes(),
+                        indexedAt = now,
+                    ),
+                )
+                embeddingJob(id)?.let { setJobStatus(it.id, "COMPLETED", now) }
+            }
+            AddMemoryResult(id, created = true)
+        }
+    }
+
+    override suspend fun searchMemories(request: SearchMemories): List<MemoryHit> = lock.withLock {
+        val facts = dao.itemsForOwners(request.spaceId, listOf(request.ownerId))
+            .filter { it.kind == MemoryKind.FACT.name && it.lifecycleState == LifecycleState.ACTIVE.name }
+            .filter { item ->
+                val at = item.occurredAt ?: item.createdAt
+                at <= request.at.t
+            }
+        val superseded = if (request.latestOnly) {
+            facts.flatMap { linkedIds(it.payloadJson) }.toSet()
+        } else {
+            emptySet()
+        }
+        val visible = facts.filter { it.id !in superseded }
+        if (visible.isEmpty()) return@withLock emptyList()
+        val newest = visible.maxOf { it.createdAt }
+        val oldest = visible.minOf { it.createdAt }
+        val span = (newest - oldest).coerceAtLeast(1)
+        val embeddings = if (request.queryVector != null) {
+            dao.embeddings(request.embeddingModelId, visible.map { it.id }).associateBy { it.memoryId }
+        } else {
+            emptyMap()
+        }
+        val lexical = lexicalScores(request.lexical, request.query, visible.map { it.text })
+        visible.mapIndexed { index, item ->
+            val lex = lexical[index]
+            val vector = embeddings[item.id]?.let { row ->
+                request.queryVector?.let { cosine(it, row.vectorBlob.toFloats()) } ?: 0.0
+            } ?: 0.0
+            val recency = if (newest == oldest) {
+                1.0
+            } else {
+                (item.createdAt - oldest).toDouble() / span.toDouble()
+            }
+            val score = if (request.queryVector == null) {
+                0.7 * lex + 0.3 * recency
+            } else {
+                0.5 * vector.coerceIn(0.0, 1.0) + 0.3 * lex + 0.2 * recency
+            }
+            MemoryHit(
+                id = item.id,
+                text = item.text,
+                score = score,
+                createdAt = item.createdAt,
+                linkedMemoryIds = linkedIds(item.payloadJson),
+            )
+        }.filter { it.score >= request.minScore }
+            .sortedByDescending { it.score }
+            .take(request.limit)
     }
 
     override suspend fun indexHealth(spaceId: String): IndexHealth =
@@ -631,7 +776,7 @@ class SqliteLedgerRuntime(
                     item.validFrom != null &&
                     item.validFrom <= request.at.t &&
                     (item.validTo == null || item.validTo > request.at.t)
-            MemoryKind.EPISODE.name ->
+            MemoryKind.EPISODE.name, MemoryKind.FACT.name ->
                 item.occurredAt != null && item.occurredAt <= request.at.t
             else -> false
         }
@@ -704,6 +849,21 @@ class SqliteLedgerRuntime(
     private fun err(code: String, message: String = code) = MemoryError(code, message)
 
     private fun newId(): String = UUID.randomUUID().toString()
+}
+
+private fun buildFactPayload(linked: List<String>): String =
+    buildJsonObject {
+        putJsonArray("linked_memory_ids") {
+            linked.forEach { add(JsonPrimitive(it)) }
+        }
+    }.toString()
+
+private fun linkedIds(payloadJson: String): List<String> = try {
+    val obj = Json.parseToJsonElement(payloadJson) as? JsonObject ?: return emptyList()
+    val arr = obj["linked_memory_ids"] as? JsonArray ?: return emptyList()
+    arr.mapNotNull { (it as? JsonPrimitive)?.content }
+} catch (_: Throwable) {
+    emptyList()
 }
 
 private fun FloatArray.toBytes(): ByteArray {

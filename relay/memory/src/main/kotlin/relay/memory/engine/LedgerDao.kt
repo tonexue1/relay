@@ -103,6 +103,16 @@ abstract class LedgerDao {
     @Query(
         """
         SELECT * FROM memory_item
+        WHERE space_id = :spaceId AND owner_id = :ownerId AND kind = 'FACT'
+          AND idempotency_key = :key
+        LIMIT 1
+        """,
+    )
+    abstract suspend fun factByKey(spaceId: String, ownerId: String, key: String): MemoryItemEntity?
+
+    @Query(
+        """
+        SELECT * FROM memory_item
         WHERE space_id = :spaceId AND owner_id IN (:owners)
         """,
     )

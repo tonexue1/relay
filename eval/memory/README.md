@@ -1,4 +1,10 @@
-# Memory eval · 抽取 / 做梦
+# Memory eval
+
+FACT 检索第一闸：[retrieval/README.md](./retrieval/README.md)（叠仓 100 fact，coverage vs BM25 网格）。公开原文件仍在 [data/README.md](./data/README.md)，不要当第一闸。
+
+---
+
+# 抽取 / 做梦（旧图）
 
 当前架构的评测集：云端 `CloudTripleExtractor` 双输出（开放 Claim + 闭集 Triple）+ 夜里 `merge_nodes`。不是 [eval/dream](../dream/README.md) 里被否的端侧 3B 抽取。
 

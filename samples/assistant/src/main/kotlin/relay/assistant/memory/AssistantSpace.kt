@@ -8,34 +8,18 @@ import relay.memory.api.MemoryBatch
 import relay.memory.api.MemoryFault
 import relay.memory.api.MemoryRuntime
 import relay.memory.api.MemoryWriterKind
-import relay.memory.api.OverwritePolicy
 import relay.memory.api.RawEventDraft
 import relay.memory.api.RawEventId
 import relay.memory.api.RenderedText
 import relay.memory.api.SourceRef
 import relay.memory.api.SourceType
-import relay.memory.api.StateFieldSpec
-import relay.memory.api.StateSchemaSnapshot
+import relay.memory.ensureSpace
 
 const val SPACE_ASSISTANT: String = "assistant"
 const val OWNER_USER: String = "user"
 
 suspend fun MemoryRuntime.ensureAssistantSpace() {
-    registerStateSchema(
-        StateSchemaSnapshot(
-            spaceId = SPACE_ASSISTANT,
-            clockDomain = ClockDomain.WALL_CLOCK,
-            fields = listOf(
-                StateFieldSpec(
-                    spaceId = SPACE_ASSISTANT,
-                    fieldId = "allergies",
-                    overwritePolicy = OverwritePolicy.USER_LOCK,
-                ),
-                StateFieldSpec(spaceId = SPACE_ASSISTANT, fieldId = "location"),
-            ),
-        ),
-    )
-    putFieldAlias(SPACE_ASSISTANT, "过敏", "allergies")
+    ensureSpace(SPACE_ASSISTANT)
 }
 
 suspend fun MemoryRuntime.captureTurn(

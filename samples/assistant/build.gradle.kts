@@ -6,11 +6,18 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val devApiKey: String = providers
-    .fileContents(rootProject.layout.projectDirectory.file("local.properties"))
-    .asText
-    .map { text -> Properties().apply { load(text.reader()) }.getProperty("relay.deepseek.apiKey", "") }
-    .getOrElse("")
+val localProps: Properties = Properties().also { props ->
+    val file = rootProject.layout.projectDirectory.file("local.properties").asFile
+    if (file.exists()) file.reader().use { props.load(it) }
+}
+
+fun localProp(name: String, default: String = ""): String =
+    localProps.getProperty(name, default).orEmpty()
+
+val devApiKey: String = localProp("relay.deepseek.apiKey")
+val embeddingApiKey: String = localProp("relay.embedding.apiKey")
+val embeddingBaseUrl: String = localProp("relay.embedding.baseUrl", "https://api.openai.com/v1/")
+val embeddingModel: String = localProp("relay.embedding.model", "text-embedding-3-small")
 
 android {
     namespace = "relay.assistant"
@@ -23,6 +30,9 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         buildConfigField("String", "DEEPSEEK_API_KEY", "\"$devApiKey\"")
+        buildConfigField("String", "EMBEDDING_API_KEY", "\"$embeddingApiKey\"")
+        buildConfigField("String", "EMBEDDING_BASE_URL", "\"$embeddingBaseUrl\"")
+        buildConfigField("String", "EMBEDDING_MODEL", "\"$embeddingModel\"")
     }
 
     buildTypes {

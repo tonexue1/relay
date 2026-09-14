@@ -29,10 +29,11 @@ import relay.llm.provider.DeepSeek
 import relay.assistant.memory.OWNER_USER
 import relay.assistant.memory.SPACE_ASSISTANT
 import relay.assistant.memory.captureTurn
+import relay.assistant.memory.assistantEmbedder
 import relay.assistant.memory.ensureAssistantSpace
 import relay.assistant.memory.rememberTools
 import relay.memory.RecallContext
-import relay.memory.agent.recalling
+import relay.memory.agent.recallingFacts
 import relay.memory.api.ClockDomain
 import relay.memory.api.MemoryKind
 import relay.memory.api.MemoryRuntime
@@ -474,6 +475,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         boundMemoryEnabled = state.memoryEnabled
         boundAutomaticRecall = automaticRecall
         val provider = DeepSeek.provider(state.apiKey, httpClient)
+        val embedder = assistantEmbedder(httpClient)
         agent = Agent(
             provider = provider,
             config = AgentConfig(
@@ -487,6 +489,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     spaceId = SPACE_ASSISTANT,
                     ownerId = OWNER_USER,
                     rawEventIds = { lastRawEventIds },
+                    embedder = embedder,
                 )
             } else {
                 emptyList()
@@ -494,14 +497,11 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             contextAugmenters = buildList {
                 add(currentTimeContextAugmenter())
                 if (state.memoryEnabled && automaticRecall) {
-                    add(
-                    runtime.recalling(
+                    add(runtime.recallingFacts(
                         spaceId = SPACE_ASSISTANT,
                         ownerId = OWNER_USER,
-                        sessionId = { _uiState.value.activeSessionId },
-                        taskScopeId = { _uiState.value.memoryScopeId() },
-                    ),
-                    )
+                        embedder = embedder,
+                    ))
                 }
             },
             beforeToolCall = { call ->
@@ -546,7 +546,8 @@ private fun AssistantUiState.memoryScopeId(): String =
 private const val SYSTEM_PROMPT =
     "你是手机上的个人助理。每次请求都会提供当前本地时间；所有今天、明天等相对日期必须以该时间计算。" +
         "历史消息中的临时安排若已过期，绝不能作为今天待办；日期不明时先澄清。先使用上下文中垫入的用户记忆。" +
-        "用户说出稳定事实（过敏、住址等）时调用 remember_state；一次性打算不要记。" +
+        "用户说出稳定事实时调用 remember 写成一句话。" +
+        "事实变了先 search_memories，再 remember 写转变句并带上旧记忆 id。一次性打算不要记。" +
         "事实不确定就明确说明。需要结构化呈现时调用原生 UI 工具；不要生成 HTML。" +
         "需要用户在多个明确选项中做决定时，使用 render_choice_form；一组相关问题放在同一表单中，" +
         "taskAnchor 必须准确概括本轮用户的原始任务，等待用户提交后只围绕该任务继续。" +

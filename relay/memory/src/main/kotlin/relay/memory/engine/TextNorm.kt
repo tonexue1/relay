@@ -17,10 +17,10 @@ internal fun Char.isCjk(): Boolean {
         type == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS
 }
 
-internal fun queryTokens(text: String): Set<String> {
+internal fun queryTokenList(text: String): List<String> {
     val n = normalizeText(text)
-    if (n.isEmpty()) return emptySet()
-    val tokens = mutableSetOf(n)
+    if (n.isEmpty()) return emptyList()
+    val tokens = mutableListOf(n)
     Regex("[a-z0-9]+").findAll(n).forEach { tokens += it.value }
     val cjk = n.filter { it.isCjk() }
     val maxLen = minOf(3, cjk.length)
@@ -31,6 +31,8 @@ internal fun queryTokens(text: String): Set<String> {
     }
     return tokens
 }
+
+internal fun queryTokens(text: String): Set<String> = queryTokenList(text).toSet()
 
 /** FTS5 document: keep the whole string plus CJK 2/3-grams for substring recall. */
 internal fun ftsIndexText(text: String): String {
