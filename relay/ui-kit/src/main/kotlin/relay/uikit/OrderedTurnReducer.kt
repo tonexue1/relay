@@ -17,6 +17,7 @@ data class ChatTurn(
     val role: String,
     val items: List<TurnItem>,
     val complete: Boolean = true,
+    val createdAtMillis: Long = 0,
 )
 
 @Serializable
@@ -67,19 +68,22 @@ object OrderedTurnReducer {
         turns: List<ChatTurn>,
         input: String,
         id: String = UUID.randomUUID().toString(),
+        createdAtMillis: Long = System.currentTimeMillis(),
     ): List<ChatTurn> = turns + listOf(
-        ChatTurn("$id-user", "user", listOf(TurnItem.Text("$id-user-text", input))),
-        ChatTurn("$id-assistant", "assistant", emptyList(), complete = false),
+        ChatTurn("$id-user", "user", listOf(TurnItem.Text("$id-user-text", input)), createdAtMillis = createdAtMillis),
+        ChatTurn("$id-assistant", "assistant", emptyList(), complete = false, createdAtMillis = createdAtMillis),
     )
 
     fun beginContinuation(
         turns: List<ChatTurn>,
         id: String = UUID.randomUUID().toString(),
+        createdAtMillis: Long = System.currentTimeMillis(),
     ): List<ChatTurn> = turns + ChatTurn(
         "$id-assistant",
         "assistant",
         emptyList(),
         complete = false,
+        createdAtMillis = createdAtMillis,
     )
 
     fun reduce(turns: List<ChatTurn>, event: AgentEvent): List<ChatTurn> {

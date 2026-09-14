@@ -23,6 +23,7 @@ import relay.assistant.session.AssistantSession
 import relay.assistant.session.SessionStore
 import relay.assistant.session.PendingInteractionSnapshot
 import relay.assistant.session.toAgentTranscript
+import relay.assistant.time.currentTimeContextAugmenter
 import relay.llm.RelayLlmException
 import relay.llm.provider.DeepSeek
 import relay.assistant.memory.OWNER_USER
@@ -490,17 +491,18 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             } else {
                 emptyList()
             }) + uiArtifactTools(artifacts, includeHtml = false),
-            contextAugmenters = if (state.memoryEnabled && automaticRecall) {
-                listOf(
+            contextAugmenters = buildList {
+                add(currentTimeContextAugmenter())
+                if (state.memoryEnabled && automaticRecall) {
+                    add(
                     runtime.recalling(
                         spaceId = SPACE_ASSISTANT,
                         ownerId = OWNER_USER,
                         sessionId = { _uiState.value.activeSessionId },
                         taskScopeId = { _uiState.value.memoryScopeId() },
                     ),
-                )
-            } else {
-                emptyList()
+                    )
+                }
             },
             beforeToolCall = { call ->
                 ArtifactGroundingGate.check(call, groundingEvidence())
@@ -542,7 +544,8 @@ private fun AssistantUiState.memoryScopeId(): String =
     sessions.firstOrNull { it.id == activeSessionId }?.effectiveMemoryScopeId ?: activeSessionId
 
 private const val SYSTEM_PROMPT =
-    "你是手机上的个人助理。先使用上下文中垫入的用户记忆。" +
+    "你是手机上的个人助理。每次请求都会提供当前本地时间；所有今天、明天等相对日期必须以该时间计算。" +
+        "历史消息中的临时安排若已过期，绝不能作为今天待办；日期不明时先澄清。先使用上下文中垫入的用户记忆。" +
         "用户说出稳定事实（过敏、住址等）时调用 remember_state；一次性打算不要记。" +
         "事实不确定就明确说明。需要结构化呈现时调用原生 UI 工具；不要生成 HTML。" +
         "需要用户在多个明确选项中做决定时，使用 render_choice_form；一组相关问题放在同一表单中，" +

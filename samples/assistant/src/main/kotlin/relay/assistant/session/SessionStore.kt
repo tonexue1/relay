@@ -1,6 +1,8 @@
 package relay.assistant.session
 
 import android.content.Context
+import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -11,6 +13,7 @@ import relay.uikit.ChatTurn
 import relay.uikit.OrderedTurnReducer
 import relay.uikit.TurnItem
 import relay.uikit.ChoiceFormSpec
+import relay.assistant.time.temporalUserHistory
 
 @Serializable
 data class AssistantSession(
@@ -42,7 +45,10 @@ data class PendingInteractionSnapshot(
     val messages: List<Message>,
 )
 
-internal fun List<ChatTurn>.toAgentTranscript(): List<Message> = buildList {
+internal fun List<ChatTurn>.toAgentTranscript(
+    now: Instant = Instant.now(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): List<Message> = buildList {
     this@toAgentTranscript.forEach { turn ->
         when (turn.role) {
             "user" -> {
@@ -51,7 +57,14 @@ internal fun List<ChatTurn>.toAgentTranscript(): List<Message> = buildList {
                     .map { it.text }
                     .filter { it.isNotBlank() }
                     .joinToString("\n")
-                if (text.isNotBlank()) add(Message.user(text))
+                if (text.isNotBlank()) {
+                    val rendered = if (turn.createdAtMillis > 0) {
+                        temporalUserHistory(text, Instant.ofEpochMilli(turn.createdAtMillis), now, zoneId)
+                    } else {
+                        "【历史消息时间未知；其中“今天/明天”等相对日期不得作为当前待办，需先澄清。】\n$text"
+                    }
+                    add(Message.user(rendered))
+                }
             }
             "assistant" -> {
                 val visible = OrderedTurnReducer.visibleProjection(turn)

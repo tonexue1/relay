@@ -1,6 +1,8 @@
 package relay.assistant.session
 
 import androidx.test.core.app.ApplicationProvider
+import java.time.Instant
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -147,11 +149,31 @@ class SessionStoreTest {
 
         assertEquals(
             listOf(
-                Message.user("你好 Relay"),
+                Message.user("【历史消息时间未知；其中“今天/明天”等相对日期不得作为当前待办，需先澄清。】\n你好 Relay"),
                 Message.assistant("先检查\n再回答"),
             ),
             turns.toAgentTranscript(),
         )
+    }
+
+    @Test
+    fun `expired relative user plan is not reconstructed as a current todo`() {
+        val turns = listOf(
+            ChatTurn(
+                id = "user",
+                role = "user",
+                items = listOf(TurnItem.Text("text", "明天中午去南京南站接妈妈")),
+                createdAtMillis = Instant.parse("2026-09-11T02:00:00Z").toEpochMilli(),
+            ),
+        )
+
+        val transcript = turns.toAgentTranscript(
+            now = Instant.parse("2026-09-13T14:42:00Z"),
+            zoneId = ZoneId.of("Asia/Shanghai"),
+        )
+
+        assertTrue(transcript.single().content.orEmpty().contains("已过期"))
+        assertTrue(transcript.single().content.orEmpty().contains("不得作为今天待办"))
     }
 
     @Test
@@ -193,7 +215,7 @@ class SessionStoreTest {
         val transcript = turns.toAgentTranscript()
 
         assertEquals(2, transcript.size)
-        assertEquals("给我一张卡片", transcript[0].content)
+        assertEquals("【历史消息时间未知；其中“今天/明天”等相对日期不得作为当前待办，需先澄清。】\n给我一张卡片", transcript[0].content)
         assertTrue(transcript[1].content.orEmpty().contains("已生成卡片"))
         assertTrue(transcript[1].content.orEmpty().contains("研究进度"))
         assertTrue(transcript[1].content.orEmpty().contains("android-notes.md"))
