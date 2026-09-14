@@ -421,4 +421,39 @@ class AgentTest {
 
         assertEquals(listOf(1, 3), seen)
     }
+
+    @Test
+    fun agentSendsComposerViewWithoutReplacingItsTranscript() = runTest {
+        val provider = ScriptedProvider(listOf { ScriptedProvider.text("ok") })
+        val agent = Agent(
+            provider = provider,
+            config = AgentConfig(model = "fake-model"),
+            contextComposer = ContextComposer {
+                ContextView(listOf(Message.user("composed request")))
+            },
+        )
+
+        agent.prompt("original input").toList()
+
+        assertEquals(
+            listOf("composed request"),
+            provider.receivedRequests.single().messages.map { it.content },
+        )
+        assertEquals(
+            listOf("original input", "ok"),
+            agent.state.messages.map { it.content },
+        )
+    }
+
+    @Test
+    fun agentRejectsLegacyContextHooksWhenCustomComposerIsProvided() {
+        assertFailsWith<IllegalArgumentException> {
+            Agent(
+                provider = ScriptedProvider(listOf { ScriptedProvider.text("ok") }),
+                config = AgentConfig(model = "fake-model"),
+                transformContext = { it },
+                contextComposer = ContextComposer { ContextView(emptyList()) },
+            )
+        }
+    }
 }

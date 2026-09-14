@@ -39,7 +39,14 @@ class Agent(
     private val beforeToolCall: suspend (ToolCall) -> BeforeToolCallResult? = { null },
     private val tokenCounter: TokenCounter = HeuristicTokenCounter(),
     private val contextAugmenters: List<ContextAugmenter> = emptyList(),
+    contextComposer: ContextComposer? = null,
 ) {
+    init {
+        require(contextComposer == null || (transformContext == null && contextAugmenters.isEmpty())) {
+            "contextComposer cannot be combined with transformContext or contextAugmenters"
+        }
+    }
+
     val state: AgentState = AgentState(
         systemPrompt = config.systemPrompt,
         model = config.model,
@@ -52,8 +59,11 @@ class Agent(
     private val maxTokens: Int? = config.maxTokens
     private val timeoutMillis: Long? = config.timeoutMillis
 
-    private val transformContext: suspend (List<Message>) -> List<Message> =
-        transformContext ?: { it }
+    private val contextComposer: ContextComposer = contextComposer ?: DefaultContextComposer(
+        projector = ContextProjector(transformContext ?: { it }),
+        augmenters = contextAugmenters,
+        tokenCounter = tokenCounter,
+    )
 
     fun prompt(input: String): Flow<AgentEvent> = flow {
         val user = Message.user(input)
@@ -117,36 +127,17 @@ class Agent(
     }
 
     private suspend fun assembleRequestMessages(): List<Message> {
-        val additions = buildList {
-            for (augmenter in contextAugmenters) {
-                addAll(augmenter.augment(state.messages).messages)
-            }
-        }
-        val projected = transformContext(state.messages)
-        return withSystem(additions + trimTranscript(projected, additions))
-    }
-
-    private fun trimTranscript(messages: List<Message>, additions: List<Message>): List<Message> {
         val info = provider.info.model(state.model)
-        return WindowTrim(
-            contextWindow = info?.contextWindow ?: Int.MAX_VALUE,
-            reserveOutputTokens = maxTokens ?: info?.maxOutputTokens ?: 0,
-            tokenCounter = tokenCounter,
-            model = state.model,
-            extraTokens = {
-                reservedTokens() + tokenCounter.count(additions, state.model)
-            },
-        )(messages)
-    }
-
-    private fun reservedTokens(): Int {
-        val sys = state.systemPrompt
-        val systemTokens = if (sys.isBlank()) {
-            0
-        } else {
-            tokenCounter.count(listOf(Message.system(sys)), state.model)
-        }
-        return systemTokens + tokenCounter.countTools(state.tools.map { it.def }, state.model)
+        return contextComposer.compose(
+            ContextInput(
+                transcript = state.messages,
+                systemPrompt = state.systemPrompt,
+                tools = state.tools.map { it.def },
+                model = state.model,
+                contextWindow = info?.contextWindow ?: Int.MAX_VALUE,
+                reserveOutputTokens = maxTokens ?: info?.maxOutputTokens ?: 0,
+            ),
+        ).messages
     }
 
     private suspend fun kotlinx.coroutines.flow.FlowCollector<AgentEvent>.emitAllRun(
@@ -360,13 +351,6 @@ class Agent(
             message = "Model '${state.model}' does not support tools",
             providerId = provider.info.id,
         )
-    }
-
-    private fun withSystem(messages: List<Message>): List<Message> {
-        val withoutSystem = messages.filter { it.role != Role.SYSTEM }
-        val sys = state.systemPrompt
-        if (sys.isBlank()) return withoutSystem
-        return listOf(Message.system(sys)) + withoutSystem
     }
 
     private fun append(message: Message) {
