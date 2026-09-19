@@ -85,6 +85,8 @@ relay.deepseek.apiKey=sk-...
 - `samples/assistant/build/outputs/apk/debug/assistant-debug.apk`
 - `samples/playground/build/outputs/apk/debug/playground-debug.apk`
 
+当前源码快照是 [v0.1.0](https://github.com/tonexue1/relay/releases/tag/v0.1.0)。APK 体积约 90MB（含 arm64 原生库），不进 git；本机编好后可自行挂到 GitHub Release。**不要**用带 API key 的 `local.properties` 打发布包。
+
 `ondevice` 会编 llama.cpp 原生库，第一次较慢。只做云端链路时仍建议带上子模块，避免 Android 模块配置失败。
 
 ## 在应用里引用
