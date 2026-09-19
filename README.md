@@ -142,9 +142,11 @@ implementation("io.github.tonexue1:relay-ondevice:0.1.0")     // AAR, arm64 llam
 # 先装到本机 ~/.m2
 ./gradlew publishToMavenLocal
 
-# 推到 GitHub Packages（token 同上，或环境变量 GITHUB_ACTOR / GITHUB_TOKEN）
+# 推到 GitHub Packages（token 写在 ~/.gradle/gradle.properties，或环境变量 GITHUB_ACTOR / GITHUB_TOKEN）
 ./gradlew publish
 ```
+
+打 `v*` 标签也会跑 `.github/workflows/publish.yml`。
 
 `Provider` 只表示「一个模型后端」。缓存、重试、指标走拦截器；端云路由是宿主策略，不写进 `Provider`。
 
