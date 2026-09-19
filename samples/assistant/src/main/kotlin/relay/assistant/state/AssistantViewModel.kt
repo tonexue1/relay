@@ -4,18 +4,24 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
+import java.time.Instant
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import relay.agent.Agent
 import relay.agent.AgentConfig
 import relay.agent.AgentException
+import relay.agent.FunTool
+import relay.agent.Tool
 import relay.artifacts.FileArtifactRepository
 import relay.assistant.BuildConfig
 import relay.assistant.artifact.ArtifactGroundingGate
@@ -26,6 +32,13 @@ import relay.assistant.session.toAgentTranscript
 import relay.assistant.time.currentTimeContextAugmenter
 import relay.llm.RelayLlmException
 import relay.llm.provider.DeepSeek
+import relay.ondevice.OnDeviceProvider
+import relay.ondevice.ToolCallEvaluation
+import relay.ondevice.cpu.CpuTopology
+import relay.ondevice.engine.JniLlamaEngine
+import relay.ondevice.model.ModelStore
+import relay.ondevice.model.ModelSpec
+import relay.ondevice.model.OnDeviceModels
 import relay.assistant.memory.OWNER_USER
 import relay.assistant.memory.SPACE_ASSISTANT
 import relay.assistant.memory.captureTurn
@@ -65,8 +78,18 @@ data class MemoryClaimUi(
     val isolated: Boolean = false,
 )
 
+enum class InferenceMode { CLOUD, ON_DEVICE }
+
 data class AssistantUiState(
     val apiKey: String = "",
+    val inferenceMode: InferenceMode = InferenceMode.CLOUD,
+    val selectedOnDeviceModelId: String = OnDeviceModels.default.id,
+    val onDeviceModelReady: Boolean = false,
+    val onDeviceModelLoaded: Boolean = false,
+    val onDeviceBusy: Boolean = false,
+    val onDeviceDownloadProgress: Float = 0f,
+    val onDeviceEvaluating: Boolean = false,
+    val onDeviceEvaluationResult: ToolCallEvaluation.Result? = null,
     val memoryEnabled: Boolean = true,
     val sessions: List<AssistantSession> = emptyList(),
     val activeSessionId: String = "",
@@ -82,7 +105,10 @@ data class AssistantUiState(
     val activeSession: AssistantSession?
         get() = sessions.firstOrNull { it.id == activeSessionId }
     val canSend: Boolean
-        get() = apiKey.isNotBlank() && !running
+        get() = !running && !onDeviceEvaluating && when (inferenceMode) {
+            InferenceMode.CLOUD -> apiKey.isNotBlank()
+            InferenceMode.ON_DEVICE -> onDeviceModelLoaded
+        }
 }
 
 class AssistantViewModel(application: Application) : AndroidViewModel(application) {
@@ -108,8 +134,19 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         File(application.filesDir, "memory-ledger.db"),
     )
     private val artifacts = FileArtifactRepository(File(application.filesDir, "ui-artifacts"))
+    private val modelStore = ModelStore(
+        rootDir = File(application.filesDir, "models"),
+        httpClient = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(5, TimeUnit.MINUTES)
+            .build(),
+    )
+    private val onDeviceEngine = JniLlamaEngine()
+    private var onDeviceSpec: ModelSpec = OnDeviceModels.default
+    private var onDeviceProvider = OnDeviceProvider(onDeviceEngine, onDeviceSpec)
     private var agent: Agent? = null
     private var boundKey: String? = null
+    private var boundInferenceMode: InferenceMode? = null
     private var boundMemoryEnabled: Boolean? = null
     private var boundAutomaticRecall: Boolean? = null
     private var inFlight: Job? = null
@@ -120,6 +157,10 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             runtime.ensureAssistantSpace()
             refreshMemory()
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ready = modelStore.isReady(onDeviceSpec)
+            _uiState.update { it.copy(onDeviceModelReady = ready) }
         }
     }
 
@@ -199,6 +240,100 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         sessionStore.saveMemoryEnabled(value)
         _uiState.update { it.copy(memoryEnabled = value) }
         dropAgent()
+    }
+
+    fun onInferenceModeChange(value: InferenceMode) {
+        if (value == InferenceMode.ON_DEVICE && !_uiState.value.onDeviceModelLoaded) return
+        _uiState.update { it.copy(inferenceMode = value, error = null) }
+        dropAgent()
+    }
+
+    fun selectOnDeviceModel(id: String) {
+        val next = OnDeviceModels.selectableById(id) ?: return
+        val state = _uiState.value
+        if (state.running || state.onDeviceBusy || next.id == onDeviceSpec.id) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(onDeviceBusy = true, error = null) }
+            try {
+                if (onDeviceEngine.isLoaded) withContext(Dispatchers.IO) { onDeviceProvider.unload() }
+                val ready = withContext(Dispatchers.IO) { modelStore.isReady(next) }
+                onDeviceSpec = next
+                onDeviceProvider = OnDeviceProvider(onDeviceEngine, next)
+                _uiState.update {
+                    it.copy(
+                        inferenceMode = InferenceMode.CLOUD,
+                        selectedOnDeviceModelId = next.id,
+                        onDeviceModelReady = ready,
+                        onDeviceModelLoaded = false,
+                        onDeviceBusy = false,
+                        onDeviceDownloadProgress = 0f,
+                    )
+                }
+                dropAgent()
+            } catch (error: Exception) {
+                _uiState.update { it.copy(onDeviceBusy = false, error = error.message ?: "模型切换失败") }
+            }
+        }
+    }
+
+    fun downloadOnDeviceModel() {
+        if (_uiState.value.onDeviceBusy || _uiState.value.onDeviceModelReady) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(onDeviceBusy = true, error = null, onDeviceDownloadProgress = 0f) }
+            try {
+                modelStore.ensurePresent(onDeviceSpec) { downloaded, total ->
+                    _uiState.update {
+                        it.copy(onDeviceDownloadProgress = if (total > 0) downloaded.toFloat() / total else 0f)
+                    }
+                }
+                _uiState.update { it.copy(onDeviceBusy = false, onDeviceModelReady = true, onDeviceDownloadProgress = 1f) }
+            } catch (error: Exception) {
+                _uiState.update { it.copy(onDeviceBusy = false, error = error.message ?: "模型下载失败") }
+            }
+        }
+    }
+
+    fun loadOnDeviceModel() {
+        if (_uiState.value.onDeviceBusy || !_uiState.value.onDeviceModelReady || onDeviceEngine.isLoaded) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(onDeviceBusy = true, error = null) }
+            try {
+                withContext(Dispatchers.IO) {
+                    onDeviceProvider.load(modelStore.localFile(onDeviceSpec).absolutePath, nCtx = 2048, cpu = CpuTopology.plan())
+                }
+                _uiState.update { it.copy(onDeviceBusy = false, onDeviceModelLoaded = true) }
+            } catch (error: Exception) {
+                _uiState.update { it.copy(onDeviceBusy = false, error = error.message ?: "模型加载失败") }
+            }
+        }
+    }
+
+    fun runOnDeviceToolCallEvaluation() {
+        if (
+            _uiState.value.onDeviceBusy ||
+            _uiState.value.onDeviceEvaluating ||
+            !onDeviceEngine.isLoaded
+        ) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(onDeviceEvaluating = true, error = null, onDeviceEvaluationResult = null) }
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    ToolCallEvaluation.run(
+                        provider = onDeviceProvider,
+                        model = onDeviceSpec.id,
+                        tools = onDeviceTools().map(Tool::def),
+                    )
+                }
+                _uiState.update { it.copy(onDeviceEvaluating = false, onDeviceEvaluationResult = result) }
+            } catch (error: Exception) {
+                _uiState.update {
+                    it.copy(
+                        onDeviceEvaluating = false,
+                        error = error.message ?: "端侧工具调用评测失败",
+                    )
+                }
+            }
+        }
     }
 
     fun newSession() {
@@ -467,36 +602,44 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         if (
             agent != null &&
             boundKey == state.apiKey &&
+            boundInferenceMode == state.inferenceMode &&
             boundMemoryEnabled == state.memoryEnabled &&
             boundAutomaticRecall == automaticRecall
         ) return agent!!
         dropAgent()
         boundKey = state.apiKey
+        boundInferenceMode = state.inferenceMode
         boundMemoryEnabled = state.memoryEnabled
         boundAutomaticRecall = automaticRecall
-        val provider = DeepSeek.provider(state.apiKey, httpClient)
+        val onDevice = state.inferenceMode == InferenceMode.ON_DEVICE
+        check(!onDevice || onDeviceEngine.isLoaded) { "请先加载端侧模型" }
+        val provider = if (onDevice) onDeviceProvider else DeepSeek.provider(state.apiKey, httpClient)
         val embedder = assistantEmbedder(httpClient)
         agent = Agent(
             provider = provider,
             config = AgentConfig(
-                model = DeepSeek.CHAT,
-                systemPrompt = SYSTEM_PROMPT,
+                model = if (onDevice) onDeviceSpec.id else DeepSeek.CHAT,
+                systemPrompt = if (onDevice) ON_DEVICE_SYSTEM_PROMPT else SYSTEM_PROMPT,
                 maxToolBatches = 8,
                 timeoutMillis = 90_000,
             ),
-            tools = (if (state.memoryEnabled) {
-                runtime.rememberTools(
-                    spaceId = SPACE_ASSISTANT,
-                    ownerId = OWNER_USER,
-                    rawEventIds = { lastRawEventIds },
-                    embedder = embedder,
-                )
+            tools = if (onDevice) {
+                onDeviceTools()
             } else {
-                emptyList()
-            }) + uiArtifactTools(artifacts, includeHtml = false),
+                (if (state.memoryEnabled) {
+                    runtime.rememberTools(
+                        spaceId = SPACE_ASSISTANT,
+                        ownerId = OWNER_USER,
+                        rawEventIds = { lastRawEventIds },
+                        embedder = embedder,
+                    )
+                } else {
+                    emptyList()
+                }) + uiArtifactTools(artifacts, includeHtml = false)
+            },
             contextAugmenters = buildList {
                 add(currentTimeContextAugmenter())
-                if (state.memoryEnabled && automaticRecall) {
+                if (!onDevice && state.memoryEnabled && automaticRecall) {
                     add(runtime.recallingFacts(
                         spaceId = SPACE_ASSISTANT,
                         ownerId = OWNER_USER,
@@ -517,6 +660,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     private fun dropAgent() {
         agent = null
         boundKey = null
+        boundInferenceMode = null
         boundMemoryEnabled = null
         boundAutomaticRecall = null
     }
@@ -533,8 +677,22 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.value.claims.filter { it.recallable }.forEach { appendLine(it.text) }
     }
 
+    private fun onDeviceTools(): List<Tool> = listOf(
+        FunTool(
+            name = "get_current_time",
+            description = "获取设备当前本地时间。时间、日期或相对日期问题必须调用此工具。",
+        ) {
+            Instant.now().atZone(ZoneId.systemDefault()).toString()
+        },
+    )
+
     override fun onCleared() {
         inFlight?.cancel()
+        onDeviceEngine.cancel()
+        Thread({ onDeviceProvider.unload() }, "assistant-ondevice-unload").apply {
+            isDaemon = true
+            start()
+        }
         (runtime as? SqliteLedgerRuntime)?.close()
         super.onCleared()
     }
@@ -553,4 +711,9 @@ private const val SYSTEM_PROMPT =
         "taskAnchor 必须准确概括本轮用户的原始任务，等待用户提交后只围绕该任务继续。" +
         "生成图表或 Markdown 产物时，只能使用本轮用户原文或已召回记忆中的数值；" +
         "派生数值必须能由原始数据直接计算，缺少原始数据时先向用户询问，禁止补造示例数据。" +
+        "用中文回答，简洁、具体、可执行。"
+
+private const val ON_DEVICE_SYSTEM_PROMPT =
+    "你是手机上的离线个人助理。当前为端侧模型模式，不能联网或访问长期记忆。" +
+        "遇到时间、日期或相对日期问题时，必须调用 get_current_time。" +
         "用中文回答，简洁、具体、可执行。"

@@ -30,6 +30,7 @@ import relay.ondevice.model.ModelStore
 import relay.ondevice.model.OnDeviceModels
 
 data class OnDeviceUiState(
+    val selectedModelId: String = OnDeviceModels.default.id,
     val modelReady: Boolean = false,
     val modelLoaded: Boolean = false,
     val loadingModel: Boolean = false,
@@ -52,11 +53,12 @@ data class OnDeviceUiState(
     val canDownload: Boolean get() = !downloading && !modelReady
     val canLoad: Boolean get() = modelReady && !modelLoaded && !loadingModel && !running && !downloading
     val canSend: Boolean get() = modelLoaded && !running && !loadingModel && prompt.isNotBlank()
+    val canSelectModel: Boolean get() = !downloading && !loadingModel && !running
 }
 
 class OnDeviceTestViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val modelSpec = OnDeviceModels.default
+    private var modelSpec = OnDeviceModels.default
     private val store = ModelStore(
         rootDir = application.filesDir.resolve("models"),
         httpClient = OkHttpClient.Builder()
@@ -65,7 +67,7 @@ class OnDeviceTestViewModel(application: Application) : AndroidViewModel(applica
             .build(),
     )
     private val engine = JniLlamaEngine()
-    private val provider = OnDeviceProvider(engine, modelSpec)
+    private var provider = OnDeviceProvider(engine, modelSpec)
 
     private val _uiState = MutableStateFlow(OnDeviceUiState())
     val uiState: StateFlow<OnDeviceUiState> = _uiState.asStateFlow()
@@ -74,15 +76,58 @@ class OnDeviceTestViewModel(application: Application) : AndroidViewModel(applica
 
     init {
         // SHA-256 of a ~400MB GGUF must not run on the main thread.
+        val initialSpec = modelSpec
         viewModelScope.launch(Dispatchers.IO) {
-            val ready = store.isReady(modelSpec)
-            _uiState.update { it.copy(modelReady = ready) }
+            val ready = store.isReady(initialSpec)
+            _uiState.update {
+                if (it.selectedModelId == initialSpec.id) it.copy(modelReady = ready) else it
+            }
         }
     }
 
     fun onPromptChange(value: String) = _uiState.update { it.copy(prompt = value) }
 
     fun onStreamingChange(value: Boolean) = _uiState.update { it.copy(streaming = value) }
+
+    fun selectModel(id: String) {
+        val nextSpec = OnDeviceModels.selectableById(id) ?: return
+        val state = _uiState.value
+        if (
+            nextSpec.id == modelSpec.id ||
+            state.downloading ||
+            state.loadingModel ||
+            state.running
+        ) return
+
+        viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(loadingModel = true, error = null) }
+                if (engine.isLoaded) {
+                    withContext(Dispatchers.IO) { provider.unload() }
+                }
+                val ready = withContext(Dispatchers.IO) { store.isReady(nextSpec) }
+                modelSpec = nextSpec
+                provider = OnDeviceProvider(engine, nextSpec)
+                _uiState.update {
+                    it.copy(
+                        selectedModelId = nextSpec.id,
+                        modelReady = ready,
+                        modelLoaded = false,
+                        loadingModel = false,
+                        downloadProgress = 0f,
+                        downloadLabel = "",
+                        output = "",
+                        error = null,
+                    )
+                }
+                appendLog("selected ${nextSpec.displayName}")
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(loadingModel = false, error = e.message ?: "model switch failed")
+                }
+            }
+        }
+    }
 
     fun download() {
         if (!_uiState.value.canDownload) return

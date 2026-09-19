@@ -1,0 +1,118 @@
+@startuml
+title relay-agent-core · Agent 执行流程
+
+skinparam shadowing false
+skinparam defaultFontName "Noto Sans CJK SC"
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  DiamondBackgroundColor #FFF7ED
+  DiamondBorderColor #C2410C
+  StartColor #16A34A
+  EndColor #DC2626
+  BarColor #2563EB
+}
+
+start
+
+partition "调用方" {
+  if (入口?) then (prompt(input))
+    :创建 User Message;
+    :追加到 AgentState.messages;
+  else (continueRun())
+    :验证 transcript 最后一条消息\n是 USER 或 TOOL;
+    if (合法?) then (是)
+    else (否)
+      :抛出 CannotContinue;
+      stop
+    endif
+  endif
+}
+
+partition "Agent loop" {
+  :验证没有正在运行的任务;
+  :有 tools 时验证 Provider\n支持 Capability.TOOLS;
+  :state.isRunning = true;
+  :发出 AgentStart;
+  :toolBatches = 0;
+
+  repeat
+    :发出 TurnStart;
+    if (本次是 prompt 的第一轮?) then (是)
+      :发出 User 的\nMessageStart / MessageEnd;
+    endif
+
+    partition "构建 LLM 请求（临时视图，不写回 transcript）" {
+      :依次执行 ContextAugmenter;
+      :transformContext(state.messages);
+      :计算 system prompt、tools、augmenter\n与预留输出 token 占用;
+      :WindowTrim 裁剪最旧非 system 消息\n（assistant tool call 连同其 tool results 一起裁剪）;
+      :加入 system prompt;
+      :创建 ChatRequest（包含 tools）;
+    }
+
+    partition "Provider 流式响应" {
+      :发出 assistant MessageStart;
+      :provider.stream(request);
+      :逐 chunk 发出 MessageUpdate;
+      :累计 Text 与 ToolCallDelta;
+      :折叠为 assistant Message;
+      :追加 assistant 到 AgentState.messages;
+      :发出 assistant MessageEnd;
+    }
+
+    if (assistant 有 toolCalls?) then (否)
+      :发出 TurnEnd（无工具结果）;
+      :发出 AgentEnd(transcript);
+      break
+    else (是)
+      if (toolBatches >= maxToolBatches?) then (是)
+        partition "工具预算耗尽" {
+          :对每个 tool call 写入\n“预算耗尽，请总结” ToolResult;
+          :发出对应工具与消息事件;
+          :发出 TurnEnd;
+          :发出新的 TurnStart;
+          :重新构建请求，但不再传 tools;
+          :流式收集最终 assistant 回复\n（忽略意外返回的 tool calls）;
+          :发出 TurnEnd 与 AgentEnd;
+        }
+        break
+      else (否)
+        partition "执行工具批次" {
+          :对每个 ToolCall 发出 ToolExecutionStart;
+          if (能按名称找到 Tool?) then (是)
+            if (beforeToolCall 阻止?) then (是)
+              :产出错误 ToolResult;
+              :发出 ToolExecutionEnd(isError=true);
+            else (否)
+              :加入待执行列表;
+            endif
+          else (否)
+            :产出 Unknown tool 错误结果;
+            :发出 ToolExecutionEnd(isError=true);
+          endif
+
+          if (Agent 或任一 Tool 要求 Sequential?) then (是)
+            :按调用顺序执行待执行工具;
+          else (否)
+            :并发执行待执行工具;
+          endif
+          note right
+            工具抛出的 Exception 会转换为
+            isError=true 的 ToolResult；
+            CancellationException 继续向上抛出。
+          end note
+          :按原 tool call 顺序整理结果;
+          :每个结果追加为 TOOL Message;
+          :发出对应 MessageStart / MessageEnd;
+        }
+        :发出 TurnEnd（assistant + tool results）;
+        :toolBatches += 1;
+      endif
+    endif
+  repeat while (继续 agent loop?) is (是)
+}
+
+:finally: state.isRunning = false;
+stop
+@enduml

@@ -60,6 +60,7 @@ dependencies {
     implementation(project(":relay:memory"))
     implementation(project(":relay:artifacts"))
     implementation(project(":relay:ui-kit"))
+    implementation(project(":relay:ondevice"))
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.androidx.core.ktx)

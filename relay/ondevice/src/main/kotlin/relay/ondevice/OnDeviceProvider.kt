@@ -9,6 +9,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import relay.llm.Provider
 import relay.llm.RelayLlmException
 import relay.llm.foldToResponse
@@ -18,7 +24,10 @@ import relay.llm.model.ChatRequest
 import relay.llm.model.ChatResponse
 import relay.llm.model.FinishReason
 import relay.llm.model.ModelInfo
+import relay.llm.model.Message
 import relay.llm.model.ProviderInfo
+import relay.llm.model.ToolCallDelta
+import relay.llm.model.ToolDef
 import relay.llm.model.Usage
 import relay.ondevice.cpu.CpuPlan
 import relay.ondevice.cpu.CpuTopology
@@ -31,8 +40,9 @@ import relay.ondevice.model.OnDeviceModels
 /**
  * End-side [Provider] backed by a local llama.cpp engine.
  *
- * Call [load] with a verified GGUF path before chat/stream. Tools are rejected --
- * the current Instruct checkpoints do not advertise TOOLS.
+ * Call [load] with a verified GGUF path before chat/stream. Tool calls use a
+ * constrained text protocol because llama.cpp emits raw text rather than a native
+ * tool-call stream.
  *
  * Streaming: native generation runs on a dedicated thread and pushes text pieces into a
  * queue drained on [Dispatchers.IO]. Cancelling collection calls [LlamaEngine.cancel].
@@ -51,7 +61,7 @@ class OnDeviceProvider(
                 id = modelSpec.id,
                 contextWindow = modelSpec.contextWindow,
                 maxOutputTokens = modelSpec.maxOutputTokens,
-                capabilities = setOf(Capability.STREAMING),
+                capabilities = setOf(Capability.STREAMING, Capability.TOOLS),
             ),
         ),
     )
@@ -79,7 +89,7 @@ class OnDeviceProvider(
         }
 
         val prompt = try {
-            engine.formatChat(request.messages)
+            engine.formatChat(messagesForPrompt(request))
         } catch (e: RuntimeException) {
             throw RelayLlmException.InvalidRequest(
                 message = e.message ?: "Invalid messages",
@@ -117,12 +127,15 @@ class OnDeviceProvider(
 
         try {
             var finished: GenerateResult? = null
+            val toolProtocolOutput = StringBuilder()
             while (true) {
                 currentCoroutineContext().ensureActive()
                 val item = queue.take()
                 when {
                     item === doneSentinel -> break
-                    item is TokenPiece -> emit(ChatChunk.Text(item.text))
+                    item is TokenPiece -> {
+                        if (request.tools.isEmpty()) emit(ChatChunk.Text(item.text)) else toolProtocolOutput.append(item.text)
+                    }
                     item is GenerateResult -> finished = item
                     item is Throwable -> throw item
                 }
@@ -140,6 +153,24 @@ class OnDeviceProvider(
                     providerId = PROVIDER_ID,
                 )
                 is GenerateResult.Ok -> {
+                    if (request.tools.isNotEmpty()) {
+                        val output = toolProtocolOutput.toString()
+                        val call = parseToolCall(output, request.tools)
+                        if (call == null) {
+                            if (output.isNotEmpty()) emit(ChatChunk.Text(output))
+                        } else {
+                            emit(
+                                ChatChunk.ToolCalls(
+                                    ToolCallDelta(
+                                        index = 0,
+                                        id = "ondevice-tool-0",
+                                        name = call.name,
+                                        argumentsDelta = call.argumentsJson,
+                                    ),
+                                ),
+                            )
+                        }
+                    }
                     val usage = Usage(
                         promptTokens = result.promptTokens,
                         completionTokens = result.completionTokens,
@@ -170,12 +201,6 @@ class OnDeviceProvider(
     }.flowOn(Dispatchers.IO)
 
     private fun validate(request: ChatRequest) {
-        if (request.tools.isNotEmpty()) {
-            throw RelayLlmException.InvalidRequest(
-                message = "On-device provider does not support tools",
-                providerId = PROVIDER_ID,
-            )
-        }
         if (request.model.isNotBlank() && request.model != modelSpec.id) {
             throw RelayLlmException.InvalidRequest(
                 message = "Unknown on-device model '${request.model}' (expected ${modelSpec.id})",
@@ -185,6 +210,43 @@ class OnDeviceProvider(
     }
 
     private data class TokenPiece(val text: String)
+
+    private data class ParsedToolCall(val name: String, val argumentsJson: String)
+
+    private fun messagesForPrompt(request: ChatRequest) =
+        if (request.tools.isEmpty()) request.messages else {
+            listOf(Message.system(toolProtocolInstructions(request.tools))) + request.messages
+        }
+
+    private fun toolProtocolInstructions(tools: List<ToolDef>): String = buildString {
+        append("# Tools\n\n")
+        append("You may call one or more functions to assist with the user query.\n\n")
+        append("You are provided with function signatures within <tools></tools> XML tags:\n<tools>")
+        tools.forEach { tool -> append('\n').append(qwenToolDefinition(tool)) }
+        append("\n</tools>\n\n")
+        append("For each function call, return a JSON object with function name and arguments ")
+        append("within <tool_call></tool_call> XML tags:\n<tool_call>\n")
+        append("{\"name\": <function-name>, \"arguments\": <args-json-object>}\n")
+        append("</tool_call>")
+    }
+
+    private fun qwenToolDefinition(tool: ToolDef) = buildJsonObject {
+        put("type", "function")
+        putJsonObject("function") {
+            put("name", tool.name)
+            tool.description?.let { put("description", it) }
+            put("parameters", tool.parameters)
+        }
+    }.toString()
+
+    private fun parseToolCall(output: String, tools: List<ToolDef>): ParsedToolCall? {
+        val payload = TOOL_CALL_PATTERN.matchEntire(output)?.groupValues?.get(1) ?: return null
+        val value = runCatching { Json.parseToJsonElement(payload).jsonObject }.getOrNull() ?: return null
+        val name = value["name"]?.jsonPrimitive?.content ?: return null
+        if (tools.none { it.name == name }) return null
+        val arguments = value["arguments"]?.jsonObject?.toString() ?: return null
+        return ParsedToolCall(name, arguments)
+    }
 
     private fun GenerateTimings?.toExtra(): Map<String, String> {
         if (this == null) return emptyMap()
@@ -200,5 +262,9 @@ class OnDeviceProvider(
         const val EXTRA_PREFILL_MS = "prefillMs"
         const val EXTRA_TTFT_MS = "ttftMs"
         const val EXTRA_DECODE_MS = "decodeMs"
+        private val TOOL_CALL_PATTERN = Regex(
+            """^\s*<tool_call>\s*([{].*[}])\s*</tool_call>\s*$""",
+            setOf(RegexOption.DOT_MATCHES_ALL),
+        )
     }
 }

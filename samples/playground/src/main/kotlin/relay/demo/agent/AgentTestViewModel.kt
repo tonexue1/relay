@@ -210,6 +210,7 @@ private fun formatEvent(event: AgentEvent): String = when (event) {
     }
     is AgentEvent.MessageEnd -> "message_end ${event.message.role.name.lowercase()}"
     is AgentEvent.ToolExecutionStart -> "tool_execution_start ${event.call.name} ${event.call.argumentsJson}"
+    is AgentEvent.ToolExecutionWaiting -> "tool_execution_waiting ${event.call.name}"
     is AgentEvent.ToolExecutionEnd ->
         "tool_execution_end ${event.call.name} isError=${event.isError} ${event.result.take(80)}"
 }

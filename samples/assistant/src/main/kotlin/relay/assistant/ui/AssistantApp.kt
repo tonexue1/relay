@@ -82,6 +82,7 @@ import relay.assistant.artifact.MarkdownArtifactScreen
 import relay.assistant.session.AssistantSession
 import relay.assistant.state.AssistantUiState
 import relay.assistant.state.AssistantViewModel
+import relay.assistant.state.InferenceMode
 import relay.assistant.theme.Ink
 import relay.assistant.theme.InkMuted
 import relay.assistant.theme.Line
@@ -96,6 +97,7 @@ import relay.uikit.FileSpec
 import relay.uikit.GraphWidget
 import relay.uikit.MarkdownRenderer
 import relay.uikit.WidgetHost
+import relay.ondevice.model.OnDeviceModels
 
 private enum class Destination { CHAT, MEMORY, SETTINGS }
 
@@ -216,6 +218,11 @@ fun AssistantApp(
                         state = state,
                         onApiKeyChange = viewModel::onApiKeyChange,
                         onMemoryEnabledChange = viewModel::onMemoryEnabledChange,
+                        onInferenceModeChange = viewModel::onInferenceModeChange,
+                        onSelectOnDeviceModel = viewModel::selectOnDeviceModel,
+                        onDownloadOnDeviceModel = viewModel::downloadOnDeviceModel,
+                        onLoadOnDeviceModel = viewModel::loadOnDeviceModel,
+                        onRunOnDeviceToolCallEvaluation = viewModel::runOnDeviceToolCallEvaluation,
                         onBack = { destination = Destination.CHAT },
                     )
                 }
@@ -1297,6 +1304,11 @@ private fun SettingsScreen(
     state: AssistantUiState,
     onApiKeyChange: (String) -> Unit,
     onMemoryEnabledChange: (Boolean) -> Unit,
+    onInferenceModeChange: (InferenceMode) -> Unit,
+    onSelectOnDeviceModel: (String) -> Unit,
+    onDownloadOnDeviceModel: () -> Unit,
+    onLoadOnDeviceModel: () -> Unit,
+    onRunOnDeviceToolCallEvaluation: () -> Unit,
     onBack: () -> Unit,
 ) {
     LazyColumn(
@@ -1315,8 +1327,22 @@ private fun SettingsScreen(
         }
         item {
             SettingsCard("模型") {
-                Text("DeepSeek Chat", style = MaterialTheme.typography.titleMedium)
-                Text("支持流式回复与工具调用", color = InkMuted, style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = state.inferenceMode == InferenceMode.CLOUD,
+                        onClick = { onInferenceModeChange(InferenceMode.CLOUD) },
+                        label = { Text("DeepSeek 云端") },
+                    )
+                    FilterChip(
+                        selected = state.inferenceMode == InferenceMode.ON_DEVICE,
+                        onClick = { onInferenceModeChange(InferenceMode.ON_DEVICE) },
+                        enabled = state.onDeviceModelLoaded && !state.onDeviceBusy,
+                        label = { Text("端侧模型") },
+                    )
+                }
+                if (state.inferenceMode == InferenceMode.CLOUD) {
+                    Text("支持流式回复与工具调用", color = InkMuted, style = MaterialTheme.typography.bodySmall)
+                }
                 OutlinedTextField(
                     value = state.apiKey,
                     onValueChange = onApiKeyChange,
@@ -1326,6 +1352,57 @@ private fun SettingsScreen(
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
                 )
+                HorizontalDivider(Modifier.padding(vertical = 14.dp), color = Line)
+                Text("端侧模型", style = MaterialTheme.typography.titleSmall)
+                OnDeviceModels.selectable.forEach { model ->
+                    FilterChip(
+                        selected = state.selectedOnDeviceModelId == model.id,
+                        onClick = { onSelectOnDeviceModel(model.id) },
+                        enabled = !state.onDeviceBusy && !state.running,
+                        label = { Text(model.displayName) },
+                    )
+                }
+                Text(
+                    when {
+                        state.onDeviceModelLoaded -> "已加载，可切换到离线端侧对话（支持设备时间工具）。"
+                        state.onDeviceModelReady -> "已下载，等待加载。"
+                        state.onDeviceBusy -> "正在准备端侧模型…"
+                        else -> "模型将下载到本机，并在离线状态下运行。"
+                    },
+                    color = InkMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (state.onDeviceBusy && state.onDeviceDownloadProgress > 0f) {
+                    Text("下载 ${(state.onDeviceDownloadProgress * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = onDownloadOnDeviceModel,
+                        enabled = !state.onDeviceBusy && !state.onDeviceModelReady,
+                    ) { Text("下载") }
+                    Button(
+                        onClick = onLoadOnDeviceModel,
+                        enabled = !state.onDeviceBusy && state.onDeviceModelReady && !state.onDeviceModelLoaded,
+                    ) { Text("加载") }
+                }
+                Button(
+                    onClick = onRunOnDeviceToolCallEvaluation,
+                    enabled = state.onDeviceModelLoaded && !state.onDeviceBusy && !state.onDeviceEvaluating,
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    Text(if (state.onDeviceEvaluating) "正在评测 20 条…" else "评测 20 条工具调用")
+                }
+                state.onDeviceEvaluationResult?.let { result ->
+                    Text(
+                        "工具调用：${result.successes}/${result.total}（${(result.successRate * 100).toInt()}%）" +
+                            if (result.failures.isEmpty()) "" else "；失败：${result.failures.joinToString { it.case.id }}",
+                        color = if (result.failures.isEmpty()) InkMuted else MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                state.error?.let { error ->
+                    Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
         item {

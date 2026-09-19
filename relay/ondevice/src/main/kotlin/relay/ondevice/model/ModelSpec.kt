@@ -22,14 +22,14 @@ object OnDeviceModels {
         id = "qwen2.5-0.5b-instruct",
         displayName = "Qwen2.5 0.5B Instruct (Q4_K_M)",
         fileName = "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
-        downloadUrl = "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
-        sha256 = "6eb923e7d26e9cea28811e1a8e852009b21242fb157b26149d3b188f3a8c8653",
-        expectedBytes = 397_808_192L,
+        downloadUrl = "https://www.modelscope.cn/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/master/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+        sha256 = "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+        expectedBytes = 491_400_032L,
         contextWindow = 32_768,
         maxOutputTokens = 2_048,
     )
 
-    /** Slot only -- not downloaded or loaded in this slice. */
+    /** Slot only -- it lacks a verified artifact checksum and is not selectable yet. */
     val Qwen25_15B = ModelSpec(
         id = "qwen2.5-1.5b-instruct",
         displayName = "Qwen2.5 1.5B Instruct (Q4_K_M)",
@@ -45,12 +45,18 @@ object OnDeviceModels {
         id = "qwen2.5-3b-instruct",
         displayName = "Qwen2.5 3B Instruct (Q4_K_M)",
         fileName = "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
-        downloadUrl = "https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/resolve/main/Qwen2.5-3B-Instruct-Q4_K_M.gguf",
-        sha256 = "9c9f56a391a3abbd5b89d0245bf6106081bcc3173119d4229235dd9d23253f94",
-        expectedBytes = 1_929_903_264L,
+        downloadUrl = "https://www.modelscope.cn/models/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/master/qwen2.5-3b-instruct-q4_k_m.gguf",
+        sha256 = "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+        expectedBytes = 2_104_932_768L,
         contextWindow = 32_768,
         maxOutputTokens = 2_048,
     )
 
     val default: ModelSpec = Qwen25_3B
+
+    /** Models whose download artifacts are fully specified and can be safely verified. */
+    val selectable: List<ModelSpec> = listOf(Qwen25_05B, Qwen25_3B)
+
+    fun selectableById(id: String): ModelSpec? = selectable.firstOrNull { it.id == id }
+
 }

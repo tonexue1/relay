@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Relay · Choice Form 交互原型</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --paper: #fffdf9;
+      --ink: #211e1a;
+      --muted: #716b63;
+      --line: #e5ded3;
+      --accent: #8b3d2b;
+      --accent-soft: #f2e2dc;
+      --lavender: #eee9f0;
+      --success: #49624b;
+      --shadow: 0 22px 70px rgba(33, 30, 26, .14);
+      --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      --serif: "Iowan Old Style", "Songti SC", serif;
+      --mono: "SFMono-Regular", Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 18% 10%, rgba(139, 61, 43, .08), transparent 26rem),
+        var(--bg);
+      color: var(--ink);
+      font-family: var(--ui);
+    }
+    button { font: inherit; }
+    .page {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 36px 22px 72px;
+    }
+    header { margin-bottom: 28px; }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 7px 0 8px;
+      font: 650 34px/1.2 var(--serif);
+    }
+    .lead { margin: 0; max-width: 700px; color: var(--muted); }
+    .stage {
+      display: grid;
+      grid-template-columns: 390px minmax(0, 1fr);
+      gap: 30px;
+      align-items: start;
+    }
+    .phone {
+      width: 390px;
+      height: 820px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      background: #faf8f3;
+      border: 9px solid var(--ink);
+      border-radius: 38px;
+      box-shadow: var(--shadow);
+    }
+    .status {
+      height: 30px;
+      padding: 7px 18px 0;
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+    }
+    .topbar {
+      height: 58px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--paper);
+    }
+    .topbar b { flex: 1; font-size: 17px; }
+    .round {
+      width: 32px;
+      height: 32px;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--ink);
+      font-size: 19px;
+    }
+    .chat {
+      flex: 1;
+      overflow: auto;
+      padding: 22px 14px 18px;
+    }
+    .assistant-copy {
+      margin: 0 4px 14px;
+      font-size: 14px;
+      line-height: 1.65;
+    }
+    .form-card {
+      overflow: hidden;
+      border: 1px solid rgba(139, 61, 43, .13);
+      border-radius: 20px;
+      background: var(--paper);
+      box-shadow: 0 8px 28px rgba(33, 30, 26, .08);
+    }
+    .form-head { padding: 16px 16px 12px; }
+    .head-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .form-title { font-weight: 720; font-size: 16px; }
+    .count { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .track {
+      height: 3px;
+      margin-top: 12px;
+      overflow: hidden;
+      background: var(--line);
+      border-radius: 99px;
+    }
+    .track > i {
+      display: block;
+      height: 100%;
+      width: 33.33%;
+      background: var(--accent);
+      transition: width .25s ease;
+    }
+    .question { padding: 5px 16px 12px; }
+    .question h2 {
+      margin: 0 0 4px;
+      font-size: 16px;
+      line-height: 1.45;
+    }
+    .question .hint {
+      margin: 0 0 13px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .options { display: grid; gap: 8px; }
+    .option {
+      width: 100%;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 25px 1fr auto;
+      gap: 10px;
+      align-items: start;
+      text-align: left;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: #fff;
+      cursor: pointer;
+      transition: .16s ease;
+    }
+    .option:hover { border-color: #c8b4aa; transform: translateY(-1px); }
+    .option.selected {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    .marker {
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      border: 1.5px solid #aaa198;
+      border-radius: 50%;
+      color: transparent;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    [data-kind="multi"] .marker { border-radius: 6px; }
+    .selected .marker {
+      color: #fff;
+      border-color: var(--accent);
+      background: var(--accent);
+    }
+    .option strong { display: block; font-size: 14px; }
+    .option small {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .badge {
+      padding: 2px 7px;
+      color: var(--success);
+      background: #e7eee7;
+      border-radius: 99px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .form-actions {
+      padding: 12px 16px 15px;
+      display: flex;
+      justify-content: space-between;
+      gap: 9px;
+      border-top: 1px solid var(--line);
+    }
+    .action {
+      min-width: 82px;
+      padding: 10px 15px;
+      border: 0;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 650;
+    }
+    .secondary { background: #f1ede7; color: var(--ink); }
+    .primary { margin-left: auto; background: var(--accent); color: #fff; }
+    .action:disabled { opacity: .35; cursor: not-allowed; }
+    .error {
+      min-height: 18px;
+      padding: 0 16px 5px;
+      color: #a3261e;
+      font-size: 11px;
+    }
+    .result { padding: 20px 16px; }
+    .result-icon {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 12px;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--success);
+    }
+    .result h2 { margin: 0 0 5px; font-size: 17px; }
+    .result p { margin: 0 0 15px; color: var(--muted); font-size: 13px; }
+    .summary {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border-radius: 12px;
+      background: var(--lavender);
+      font-size: 12px;
+    }
+    .summary b { color: var(--muted); }
+    .composer {
+      padding: 12px 14px 18px;
+      background: var(--paper);
+      border-top: 1px solid var(--line);
+    }
+    .composer-box {
+      padding: 12px 14px;
+      color: var(--muted);
+      background: #f1ede7;
+      border-radius: 22px;
+      font-size: 14px;
+    }
+    .notes {
+      display: grid;
+      gap: 14px;
+    }
+    .panel {
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 253, 249, .8);
+    }
+    .panel h2 { margin: 0 0 10px; font: 650 20px/1.3 var(--serif); }
+    .panel p, .panel li { color: var(--muted); font-size: 14px; line-height: 1.6; }
+    .panel ul { margin: 8px 0 0; padding-left: 19px; }
+    pre {
+      overflow: auto;
+      margin: 12px 0 0;
+      padding: 14px;
+      border-radius: 12px;
+      color: #f6efe9;
+      background: #28231f;
+      font: 12px/1.6 var(--mono);
+    }
+    .state-row { display: flex; flex-wrap: wrap; gap: 7px; }
+    .state {
+      padding: 5px 9px;
+      border-radius: 99px;
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-size: 12px;
+    }
+    @media (max-width: 860px) {
+      .stage { grid-template-columns: 1fr; }
+      .phone { width: min(390px, 100%); margin: 0 auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="eyebrow">Relay UI Kit · Interactive Spec</div>
+      <h1>Choice Form · 选择题组件</h1>
+      <p class="lead">支持单选、多选与连续问题。每题显式确认“下一步”，最后统一 Submit，适合研究路径、偏好澄清和执行前授权。</p>
+    </header>
+
+    <section class="stage">
+      <div class="phone">
+        <div class="status"><span>08:44</span><span>◉ Wi‑Fi 31%</span></div>
+        <div class="topbar">
+          <button class="round">☰</button>
+          <b>研究 · android</b>
+          <button class="round">＋</button>
+          <button class="round">···</button>
+        </div>
+        <div class="chat">
+          <p class="assistant-copy">为了按你希望的方式继续研究，我需要确认几个选择。提交前不会开始执行。</p>
+          <section class="form-card" id="formCard" aria-live="polite">
+            <div class="form-head">
+              <div class="head-row">
+                <span class="form-title">确定研究方式</span>
+                <span class="count" id="count">问题 1 / 3</span>
+              </div>
+              <div class="track"><i id="progress"></i></div>
+            </div>
+            <div id="questionHost"></div>
+          </section>
+        </div>
+        <div class="composer"><div class="composer-box">发消息</div></div>
+      </div>
+
+      <aside class="notes">
+        <section class="panel">
+          <h2>核心交互</h2>
+          <ul>
+            <li>单选点击后替换当前选择；多选可反复切换。</li>
+            <li>“下一步”只推进，不触发业务执行。</li>
+            <li>最后一题显示“提交”，一次性返回全部答案。</li>
+            <li>返回上一题时保留答案；提交后组件锁定为只读回执。</li>
+          </ul>
+        </section>
+        <section class="panel">
+          <h2>状态</h2>
+          <div class="state-row">
+            <span class="state">idle</span><span class="state">selected</span>
+            <span class="state">validation-error</span><span class="state">submitted</span>
+            <span class="state">disabled</span>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>建议规格</h2>
+          <pre>{
+  "type": "choice_form",
+  "version": 1,
+  "title": "确定研究方式",
+  "taskAnchor": "根据用户目标制定 Android 研究路径",
+  "submitLabel": "开始研究",
+  "questions": [{
+    "id": "path",
+    "kind": "single",
+    "title": "从哪条路径开始？",
+    "required": true,
+    "options": [{
+      "id": "architecture",
+      "label": "从架构总览开始",
+      "description": "先建立全局分层地图",
+      "recommended": true
+    }]
+  }]
+}</pre>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const questions = [
+      {
+        id: "path",
+        kind: "single",
+        title: "先从哪条路径开始？",
+        hint: "单选 · 选择一项后进入下一题",
+        options: [
+          ["architecture", "A. 从架构总览开始", "先建立 Android 分层与关键链路的全局地图", true],
+          ["focus", "B. 自行提供侧重点", "例如 Binder、Handler 或你正在处理的问题", false],
+          ["all", "C. 一次展开全部研究", "覆盖完整，但首轮信息量会更大", false]
+        ]
+      },
+      {
+        id: "topics",
+        kind: "multi",
+        title: "优先覆盖哪些主题？",
+        hint: "多选 · 至少选择一项",
+        options: [
+          ["process", "进程启动链", "Zygote、System Server 与应用进程", false],
+          ["ipc", "跨进程通信", "Binder 架构与线程模型", true],
+          ["runtime", "运行时与消息机制", "ART、Looper、Handler", false],
+          ["resources", "组件与资源", "AMS 调度、资源与内存管理", false]
+        ]
+      },
+      {
+        id: "output",
+        kind: "single",
+        title: "研究结果如何呈现？",
+        hint: "单选 · 提交后开始执行",
+        options: [
+          ["graph", "知识图谱 + 分步讲解", "适合逐步深入和后续检索", true],
+          ["brief", "一页摘要", "只保留核心结论与行动项", false],
+          ["notes", "原理笔记", "按主题输出可沉淀的长文档", false]
+        ]
+      }
+    ];
+
+    const answers = {};
+    let index = 0;
+    const host = document.querySelector("#questionHost");
+    const count = document.querySelector("#count");
+    const progress = document.querySelector("#progress");
+
+    function selected(question, id) {
+      const value = answers[question.id];
+      return question.kind === "multi" ? (value || []).includes(id) : value === id;
+    }
+
+    function toggle(question, id) {
+      if (question.kind === "single") {
+        answers[question.id] = id;
+      } else {
+        const values = new Set(answers[question.id] || []);
+        values.has(id) ? values.delete(id) : values.add(id);
+        answers[question.id] = [...values];
+      }
+      render();
+    }
+
+    function isValid(question) {
+      const value = answers[question.id];
+      return question.kind === "multi" ? value?.length > 0 : Boolean(value);
+    }
+
+    function render(error = "") {
+      const q = questions[index];
+      count.textContent = `问题 ${index + 1} / ${questions.length}`;
+      progress.style.width = `${((index + 1) / questions.length) * 100}%`;
+      host.innerHTML = `
+        <div class="question" data-kind="${q.kind}">
+          <h2>${q.title}</h2>
+          <p class="hint">${q.hint}</p>
+          <div class="options">
+            ${q.options.map(([id, label, description, recommended]) => `
+              <button class="option ${selected(q, id) ? "selected" : ""}" data-id="${id}">
+                <span class="marker">${selected(q, id) ? "✓" : ""}</span>
+                <span><strong>${label}</strong><small>${description}</small></span>
+                ${recommended ? '<span class="badge">推荐</span>' : ""}
+              </button>`).join("")}
+          </div>
+        </div>
+        <div class="error">${error}</div>
+        <div class="form-actions">
+          <button class="action secondary" id="back" ${index === 0 ? "disabled" : ""}>上一步</button>
+          <button class="action primary" id="next">${index === questions.length - 1 ? "提交选择" : "下一步"}</button>
+        </div>`;
+      host.querySelectorAll(".option").forEach(button =>
+        button.addEventListener("click", () => toggle(q, button.dataset.id))
+      );
+      host.querySelector("#back").addEventListener("click", () => {
+        if (index > 0) { index--; render(); }
+      });
+      host.querySelector("#next").addEventListener("click", () => {
+        if (!isValid(q)) {
+          render(q.kind === "multi" ? "请至少选择一项" : "请选择一项后继续");
+          return;
+        }
+        if (index < questions.length - 1) {
+          index++;
+          render();
+        } else {
+          submit();
+        }
+      });
+    }
+
+    function optionLabel(questionId, value) {
+      const q = questions.find(item => item.id === questionId);
+      const ids = Array.isArray(value) ? value : [value];
+      return ids.map(id => q.options.find(option => option[0] === id)?.[1]).filter(Boolean).join("、");
+    }
+
+    function submit() {
+      count.textContent = "已提交";
+      progress.style.width = "100%";
+      host.innerHTML = `
+        <div class="result">
+          <div class="result-icon">✓</div>
+          <h2>选择已提交</h2>
+          <p>结构化答案已交给 Agent，研究任务开始执行。</p>
+          <div class="summary">
+            <div><b>研究路径</b><br>${optionLabel("path", answers.path)}</div>
+            <div><b>优先主题</b><br>${optionLabel("topics", answers.topics)}</div>
+            <div><b>呈现方式</b><br>${optionLabel("output", answers.output)}</div>
+          </div>
+        </div>`;
+    }
+
+    render();
+  </script>
+</body>
+</html>

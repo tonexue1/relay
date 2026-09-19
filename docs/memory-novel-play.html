@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Relay · 剧情演绎 · 林晚</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --paper: #fffdf8;
+      --ink: #1c1916;
+      --muted: #5c564e;
+      --line: #d9d2c5;
+      --accent: #8b3d2b;
+      --accent-soft: #f3e4dc;
+      --phone: #f6f7f8;
+      --shadow: 0 18px 50px rgba(28, 25, 22, 0.12);
+      --mono: "SF Mono", "Menlo", "Consolas", monospace;
+      --sans: "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC", serif;
+      --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); line-height: 1.6; }
+    a { color: var(--accent); }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 96px; }
+    .kicker { font-family: var(--ui); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin: 0 0 8px; }
+    h1 { font-size: 34px; line-height: 1.15; margin: 0 0 12px; font-weight: 650; }
+    .lead { font-size: 18px; color: var(--muted); margin: 0 0 28px; max-width: 46rem; }
+    p { margin: 0 0 12px; }
+    code { font-family: var(--mono); font-size: 0.86em; background: var(--accent-soft); color: var(--accent); padding: 0.1em 0.35em; border-radius: 4px; }
+    .stage { display: grid; grid-template-columns: 390px 1fr; gap: 28px; align-items: start; }
+    .phone {
+      width: 390px; height: 820px; background: var(--phone);
+      border-radius: 36px; border: 10px solid #1c1916; box-shadow: var(--shadow);
+      overflow: hidden; display: flex; flex-direction: column; font-family: var(--ui); position: relative;
+    }
+    .status { height: 28px; display: flex; justify-content: space-between; align-items: center; padding: 0 18px; font-size: 12px; color: #444; }
+    .topbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px 10px; border-bottom: 1px solid #ececec; background: #fff; }
+    .topbar .title { flex: 1; font-weight: 620; font-size: 15px; }
+    .icon { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: #f3f4f6; font-size: 14px; }
+    .cast {
+      display: flex; gap: 8px; padding: 8px 14px; background: #fff; border-bottom: 1px solid #ececec;
+      overflow: auto;
+    }
+    .who {
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      font-size: 10px; color: var(--muted); min-width: 52px;
+    }
+    .who i {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: grid; place-items: center; color: #fff; font-size: 12px; font-style: normal; font-weight: 650;
+    }
+    .who.on { color: var(--accent); font-weight: 650; }
+    .who.away { opacity: 0.35; }
+    .world {
+      display: flex; gap: 6px; padding: 8px 14px; overflow: auto;
+      background: #faf8f4; border-bottom: 1px solid #ececec;
+    }
+    .world span {
+      flex: none; font-size: 11px; background: #fff; border: 1px solid #ececec;
+      border-radius: 999px; padding: 3px 8px; color: var(--muted);
+    }
+    .world span.new { background: var(--accent-soft); border-color: #e2c4b6; color: var(--accent); }
+    .feed { flex: 1; overflow: auto; padding: 14px 14px 8px; }
+    .narr {
+      font-size: 13px; color: var(--muted); text-align: center;
+      padding: 6px 18px; margin: 8px 0;
+    }
+    .line { display: flex; gap: 8px; margin: 10px 0; max-width: 92%; }
+    .line.me { margin-left: auto; flex-direction: row-reverse; }
+    .av {
+      width: 28px; height: 28px; border-radius: 50%; flex: none;
+      display: grid; place-items: center; color: #fff; font-size: 11px; font-weight: 650;
+    }
+    .bubble { background: #fff; border-radius: 16px; padding: 8px 12px; font-size: 14px; }
+    .line.me .bubble { background: #eceef1; }
+    .bubble small { display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+    .next-hint {
+      font-size: 12px; color: #2a5d8f; margin: 12px 0 4px;
+    }
+    .composer { padding: 10px 12px 8px; background: #fff; border-top: 1px solid #ececec; }
+    .modes { display: flex; gap: 6px; margin-bottom: 8px; }
+    .modes button, .go, .chip {
+      appearance: none; border: 1px solid #ececec; background: #fff;
+      border-radius: 999px; padding: 5px 10px; font: inherit; font-size: 12px;
+      color: var(--muted); cursor: pointer;
+    }
+    .modes button.on, .chip.on { background: var(--accent-soft); border-color: #e2c4b6; color: var(--accent); }
+    .row { display: flex; gap: 8px; }
+    .row input {
+      flex: 1; border: 1px solid #ececec; border-radius: 999px; padding: 8px 12px; font: inherit; font-size: 13px;
+    }
+    .go { background: #1c1916; color: #fff; border-color: #1c1916; padding: 8px 14px; }
+    .disclaimer { text-align: center; font-size: 11px; color: #999; margin-top: 6px; }
+    .tabbar { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #ececec; background: #fff; }
+    .tabbar a, .tabbar span { text-align: center; padding: 10px 0 14px; font-size: 12px; color: #888; text-decoration: none; }
+    .tabbar .on { color: var(--ink); font-weight: 650; }
+    .note { background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 22px 24px; }
+    .note h3 { margin: 0 0 10px; font-size: 18px; }
+    .note ul { margin: 0 0 16px; padding-left: 1.2em; color: var(--muted); }
+    .spec { font-family: var(--mono); font-size: 12px; background: #1c1916; color: #f3e4dc; border-radius: 12px; padding: 14px; overflow: auto; white-space: pre; }
+    @media (max-width: 920px) { .stage { grid-template-columns: 1fr; } .phone { margin: 0 auto; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="kicker">Relay · Scene / Yield</p>
+    <h1>剧情演绎：场上说话，不是把小说塞进一个气泡。</h1>
+    <p class="lead">
+      对齐 <a href="./role-simulation.md">role-simulation.md</a> 的 B：Scene 是真源，角色各自投影。
+      用户看见的是旁白和按人分的气泡。图是世界账，在另一页。
+      对照 <a href="./memory-graph-novel.html">林晚总览</a>。
+    </p>
+
+    <div class="stage">
+      <div class="phone">
+        <div class="status"><span>12:11</span><span>5G  64%</span></div>
+        <div class="topbar">
+          <div class="icon">←</div>
+          <div class="title" id="title">第二回 · 码头</div>
+          <div class="icon" id="skip" title="跳到回末">↦</div>
+        </div>
+        <div class="cast" id="cast"></div>
+        <div class="world" id="world"></div>
+        <div class="feed" id="feed"></div>
+        <div class="composer">
+          <div class="modes">
+            <button type="button" class="on" data-mode="listen">旁听</button>
+            <button type="button" data-mode="play">我是林晚</button>
+          </div>
+          <div class="row">
+            <input id="input" type="text" placeholder="插话，或按推进" />
+            <button type="button" class="go" id="advance">推进</button>
+          </div>
+          <div class="disclaimer" id="hint">下一句 · Yield 赵捕头</div>
+        </div>
+        <div class="tabbar">
+          <span class="on">演绎</span>
+          <a href="./memory-graph-novel.html">书中图</a>
+        </div>
+      </div>
+
+      <div class="note">
+        <h3>这一屏在验什么</h3>
+        <ul>
+          <li>一场戏一份 <b>Scene log</b>：旁白居中，角色各气泡。不是助手回合里套十个人的灰泡。</li>
+          <li>下一句是 <b>Yield</b>：指定 speaker，说完就停（<code>maxToolBatches = 1</code>）。旁听时「推进」；入戏时林晚那句等用户开口。</li>
+          <li>用户随时可插话。插话进 Scene，不进别人的 private。</li>
+          <li>顶上「在场」是 turn policy 的输入。淡掉的人不投影本场。</li>
+          <li>世界条是 ledger：<code>located_in</code> / <code>has_item</code> 随节拍亮。点「书中图」才看整张邻域。</li>
+          <li>赵捕头知道「腰牌是假的」，林晚第三回才知道。演绎 UI 不把别人的 private 画出来。</li>
+        </ul>
+        <div class="spec">{
+  "scene": "novel:linwan/ch2",
+  "onStage": ["林晚", "赵捕头"],
+  "world": [
+    {"s": "林晚", "p": "located_in", "o": "码头"},
+    {"s": "林晚", "p": "has_item", "o": "账本"}
+  ],
+  "next": {"op": "yield", "speaker": "赵捕头"}
+}</div>
+        <p>旁白可以是 GM，默认不对用户说戏外的话。角色不是 tool 工人，不回摘要。</p>
+      </div>
+    </div>
+  </div>
+  <script>
+    const COLOR = { 旁白: "#6b5a48", 林晚: "#1c1916", 赵捕头: "#8b3d2b", 阿秀: "#2f6f9e", 司事: "#5c564e", 你: "#3d4a5c" };
+    const CAST = [
+      { name: "林晚", from: 1 },
+      { name: "赵捕头", from: 1 },
+      { name: "司事", from: 1, until: 1 },
+      { name: "阿秀", from: 4 },
+    ];
+    const BEATS = [
+      { ch: 2, kind: "narr", text: "货栈在码头最里。赵捕头五十出头，不看腰牌，看林晚的鞋。" },
+      { ch: 2, kind: "say", speaker: "赵捕头", text: "从省城来？" },
+      { ch: 2, kind: "say", speaker: "林晚", text: "是。", player: true },
+      { ch: 2, kind: "say", speaker: "赵捕头", text: "这儿不办省城的案。" },
+      { ch: 2, kind: "narr", text: "他把一本油纸包着的册子丢到桌上。昨夜潮水把它冲到桩上。" },
+      { ch: 2, kind: "say", speaker: "赵捕头", text: "你识字，你看。" },
+      { ch: 2, kind: "world", fact: "林晚 持有 账本", s: "林晚", p: "持有", o: "账本" },
+      { ch: 2, kind: "say", speaker: "林晚", text: "结什么？", player: true },
+      { ch: 2, kind: "say", speaker: "赵捕头", text: "结了就结了。你今晚守码头。刀留给自己。" },
+      { ch: 2, kind: "narr", text: "林晚把账本塞进怀里。赵捕头没拦。" },
+      { ch: 2, kind: "world", fact: "账本 伏笔 未收束", s: "账本", p: "伏笔", o: "未收束" },
+    ];
+    const WORLD0 = [
+      { fact: "林晚 位于 码头", at: 0 },
+      { fact: "林晚 是 捕快", at: 0 },
+      { fact: "王二 状态 已死", at: 0 },
+    ];
+
+    const state = { i: -1, mode: "listen", shown: [], world: [...WORLD0] };
+
+    const $ = (id) => document.getElementById(id);
+    const initial = (name) => name.slice(0, 1);
+
+    const renderCast = () => {
+      const beat = BEATS[Math.max(state.i, 0)];
+      const speaker = beat && beat.kind === "say" ? beat.speaker : "";
+      $("cast").innerHTML = CAST.filter((c) => c.from <= 2 && (!c.until || c.until >= 2)).map((c) => {
+        const on = c.name === speaker ? "on" : "";
+        return `<div class="who ${on}"><i style="background:${COLOR[c.name]}">${initial(c.name)}</i>${c.name}</div>`;
+      }).join("");
+    };
+
+    const renderWorld = () => {
+      const latest = state.world[state.world.length - 1];
+      $("world").innerHTML = state.world.map((w) =>
+        `<span class="${w === latest && state.i >= 0 ? "new" : ""}">${w.fact}</span>`
+      ).join("");
+    };
+
+    const appendBeat = (beat) => {
+      if (beat.kind === "narr") {
+        $("feed").insertAdjacentHTML("beforeend", `<div class="narr">${beat.text}</div>`);
+      } else if (beat.kind === "say") {
+        const mine = state.mode === "play" && beat.player;
+        $("feed").insertAdjacentHTML("beforeend", `
+          <div class="line ${mine ? "me" : ""}">
+            <div class="av" style="background:${COLOR[beat.speaker]}">${initial(beat.speaker)}</div>
+            <div class="bubble"><small>${mine ? "你 · 林晚" : beat.speaker}</small>${beat.text}</div>
+          </div>`);
+      } else if (beat.kind === "world") {
+        state.world.push({ fact: beat.fact, at: state.i });
+        $("feed").insertAdjacentHTML("beforeend", `<div class="narr">世界 · ${beat.fact}</div>`);
+      }
+      $("feed").scrollTop = $("feed").scrollHeight;
+    };
+
+    const nextSpeakable = () => {
+      for (let i = state.i + 1; i < BEATS.length; i++) {
+        const b = BEATS[i];
+        if (b.kind === "say" || b.kind === "narr") return b;
+      }
+      return null;
+    };
+
+    const hint = () => {
+      if (state.i >= BEATS.length - 1) {
+        $("hint").textContent = "本回结束 · 账本未收束";
+        $("advance").textContent = "回末";
+        return;
+      }
+      const n = nextSpeakable();
+      if (state.mode === "play" && n && n.player) {
+        $("hint").textContent = "轮到你 · 林晚开口，或用草稿";
+        $("advance").textContent = "开口";
+        $("input").placeholder = n.text;
+        return;
+      }
+      $("hint").textContent = n
+        ? `下一句 · Yield ${n.kind === "narr" ? "旁白" : n.speaker}`
+        : "本回结束";
+      $("advance").textContent = "推进";
+      $("input").placeholder = "插话，或按推进";
+    };
+
+    const advance = (userText) => {
+      if (state.i >= BEATS.length - 1 && !userText) return;
+      const n = nextSpeakable();
+      if (userText) {
+        $("feed").insertAdjacentHTML("beforeend", `
+          <div class="line me">
+            <div class="av" style="background:${COLOR["你"]}">你</div>
+            <div class="bubble"><small>插话</small>${userText}</div>
+          </div>`);
+        $("feed").scrollTop = $("feed").scrollHeight;
+        $("input").value = "";
+        hint();
+        return;
+      }
+      if (state.mode === "play" && n && n.player) {
+        const said = $("input").value.trim() || n.text;
+        $("input").value = "";
+        while (state.i < BEATS.length - 1) {
+          state.i += 1;
+          const beat = BEATS[state.i];
+          if (beat === n) {
+            appendBeat({ ...beat, text: said });
+            break;
+          }
+          appendBeat(beat);
+        }
+      } else {
+        while (state.i < BEATS.length - 1) {
+          state.i += 1;
+          appendBeat(BEATS[state.i]);
+          if (BEATS[state.i].kind !== "world") break;
+        }
+      }
+      renderCast();
+      renderWorld();
+      hint();
+    };
+
+    document.querySelector(".modes").addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-mode]");
+      if (!btn) return;
+      state.mode = btn.dataset.mode;
+      document.querySelectorAll(".modes button").forEach((b) => b.classList.toggle("on", b === btn));
+      hint();
+    });
+    $("advance").addEventListener("click", () => advance());
+    $("input").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        const text = $("input").value.trim();
+        if (text && (state.mode === "listen" || !(nextSpeakable() && nextSpeakable().player))) advance(text);
+        else advance();
+      }
+    });
+    $("skip").addEventListener("click", () => {
+      while (state.i < BEATS.length - 1) {
+        state.i += 1;
+        appendBeat(BEATS[state.i]);
+      }
+      renderCast();
+      renderWorld();
+      hint();
+    });
+
+    renderCast();
+    renderWorld();
+    $("feed").innerHTML = `<div class="narr">第二回 · 码头货栈。在场：林晚、赵捕头。</div>`;
+    hint();
+  </script>
+</body>
+</html>

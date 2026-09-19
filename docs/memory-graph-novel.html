@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Relay · 小说图总览 · 林晚</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --paper: #fffdf8;
+      --ink: #1c1916;
+      --muted: #5c564e;
+      --line: #d9d2c5;
+      --accent: #8b3d2b;
+      --accent-soft: #f3e4dc;
+      --phone: #f6f7f8;
+      --card: #ffffff;
+      --shadow: 0 18px 50px rgba(28, 25, 22, 0.12);
+      --mono: "SF Mono", "Menlo", "Consolas", monospace;
+      --sans: "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC", serif;
+      --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.6;
+    }
+    a { color: var(--accent); }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 96px; }
+    .kicker {
+      font-family: var(--ui);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 8px;
+    }
+    h1 { font-size: 34px; line-height: 1.15; margin: 0 0 12px; font-weight: 650; }
+    .lead { font-size: 18px; color: var(--muted); margin: 0 0 28px; max-width: 46rem; }
+    p { margin: 0 0 12px; }
+    code {
+      font-family: var(--mono);
+      font-size: 0.86em;
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+    .stage {
+      display: grid;
+      grid-template-columns: 390px 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+    .phone {
+      width: 390px;
+      height: 820px;
+      background: var(--phone);
+      border-radius: 36px;
+      border: 10px solid #1c1916;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      font-family: var(--ui);
+      position: relative;
+    }
+    .status {
+      height: 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 18px;
+      font-size: 12px;
+      color: #444;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px 12px;
+      border-bottom: 1px solid #ececec;
+      background: #fff;
+    }
+    .topbar .title { flex: 1; font-weight: 620; font-size: 15px; }
+    .icon {
+      width: 28px; height: 28px; border-radius: 8px;
+      display: grid; place-items: center;
+      background: #f3f4f6; color: #333; font-size: 14px;
+    }
+    .feed { flex: 1; overflow: auto; padding: 12px 14px 8px; }
+    .logline {
+      font-size: 12px;
+      color: var(--muted);
+      background: #fff;
+      border: 1px solid #ececec;
+      border-radius: 12px;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+    }
+    .ov-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .ov-stat {
+      background: #fff;
+      border: 1px solid #ececec;
+      border-radius: 12px;
+      padding: 8px 6px;
+      text-align: center;
+    }
+    .ov-stat b { display: block; font-size: 16px; line-height: 1.2; }
+    .ov-stat span { font-size: 10px; color: var(--muted); }
+    .ov-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .ov-chips button, .rel-toggle {
+      appearance: none; border: 1px solid #ececec; background: #fff;
+      border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px;
+      color: var(--muted); cursor: pointer;
+    }
+    .ov-chips button.on, .rel-toggle.on {
+      background: var(--accent-soft); border-color: #e2c4b6; color: var(--accent);
+    }
+    .chapters { flex-wrap: nowrap; overflow: auto; padding-bottom: 4px; }
+    .chapters button { min-width: 36px; padding: 4px 8px; }
+    .block {
+      background: var(--card);
+      border: 1px solid #ececec;
+      border-radius: 16px;
+      padding: 10px;
+      margin: 8px 0;
+    }
+    .block-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 8px;
+    }
+    .block-head h4 { margin: 0; font-size: 13px; color: var(--muted); font-weight: 600; }
+    .graph {
+      height: 280px;
+      border-radius: 12px;
+      background:
+        radial-gradient(circle at 30% 40%, #f3e4dc 0, transparent 42%),
+        #faf8f4;
+      position: relative;
+      overflow: hidden;
+      cursor: grab;
+      touch-action: none;
+    }
+    .graph.dragging { cursor: grabbing; }
+    .graph svg {
+      width: 620px;
+      height: 480px;
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+    .graph text { font-family: var(--ui); }
+    .graph:not(.show-rel) .g-rel { display: none; }
+    .g-rel {
+      font-size: 8.5px;
+      fill: #8b3d2b;
+      paint-order: stroke;
+      stroke: #faf8f4;
+      stroke-width: 3px;
+    }
+    .g-hud {
+      position: absolute; left: 8px; right: 8px; bottom: 8px;
+      display: flex; justify-content: space-between; align-items: center;
+      pointer-events: none;
+    }
+    .g-hud b {
+      pointer-events: auto;
+      background: rgba(255,253,248,0.92);
+      border: 1px solid #e8e0d4;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 550;
+      color: var(--muted);
+    }
+    .g-hud button { pointer-events: auto; font-size: 11px; padding: 3px 8px; }
+    .legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); margin-top: 8px; }
+    .ov-group { margin: 12px 0 6px; font-size: 12px; color: var(--muted); font-weight: 650; }
+    .ov-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 6px;
+      align-items: center;
+      font-size: 12.5px;
+      padding: 7px 0;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+    }
+    .ov-row em { font-style: normal; color: var(--accent); font-size: 11px; }
+    .claim-list { margin: 8px 0 0; padding: 0; list-style: none; }
+    .claim-list li {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 4px 0 4px 14px;
+      position: relative;
+    }
+    .claim-list li::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 10px;
+      width: 7px; height: 7px;
+      border: 1.5px dashed #8b3d2b;
+      border-radius: 50%;
+    }
+    .tabbar {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-top: 1px solid #ececec;
+      background: #fff;
+    }
+    .tabbar span { text-align: center; padding: 10px 0 14px; font-size: 12px; color: #888; }
+    .tabbar span.on { color: var(--ink); font-weight: 650; }
+    .sheet {
+      position: absolute; inset: 0;
+      background: rgba(20, 16, 12, 0.28);
+      display: none;
+      align-items: flex-end;
+    }
+    .sheet.open { display: flex; }
+    .sheet-card {
+      width: 100%;
+      background: #fff;
+      border-radius: 22px 22px 0 0;
+      padding: 16px 16px 24px;
+      max-height: 70%;
+      overflow: auto;
+    }
+    .sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .x { border: 0; background: none; font-size: 22px; cursor: pointer; }
+    .note {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 22px 24px;
+    }
+    .note h3 { margin: 0 0 10px; font-size: 18px; }
+    .note ul { margin: 0 0 16px; padding-left: 1.2em; color: var(--muted); }
+    .spec {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: #1c1916;
+      color: #f3e4dc;
+      border-radius: 12px;
+      padding: 14px;
+      overflow: auto;
+      white-space: pre;
+    }
+    @media (max-width: 920px) {
+      .stage { grid-template-columns: 1fr; }
+      .phone { margin: 0 auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="kicker">Relay · novel:linwan</p>
+    <h1>小说总览：轴是回目，不是景深。</h1>
+    <p class="lead">
+      和助手图同一套渲染器。开页焦点是 logline 里的人，条上点谁就以谁为一跳中心。
+      拖、标关系、回目筛选都一样。
+      对照 <a href="./ui-kit-design.html">助手总览稿</a>。
+    </p>
+
+    <div class="stage">
+      <div class="phone" id="phone">
+        <div class="status"><span>11:43</span><span>5G  64%</span></div>
+        <div class="topbar">
+          <div class="icon">←</div>
+          <div class="title">林晚 · 十回</div>
+          <div class="icon">↺</div>
+        </div>
+        <div class="feed" id="feed">
+          <div class="logline">码头捕快捡到不该存在的账，要给已死的王二翻案。腰牌可能是假的。</div>
+          <div class="ov-stats">
+            <div class="ov-stat"><b id="st-edges">0</b><span>活边</span></div>
+            <div class="ov-stat"><b id="st-nodes">0</b><span>节点</span></div>
+            <div class="ov-stat"><b id="st-cast">6</b><span>人物</span></div>
+            <div class="ov-stat"><b id="st-foreshadow">1</b><span>伏笔</span></div>
+          </div>
+          <div class="ov-chips chapters" id="chapters"></div>
+          <div class="ov-chips" id="focuses"></div>
+          <div class="ov-chips" id="kinds">
+            <button type="button" class="on" data-kind="all">全部</button>
+            <button type="button" data-kind="person">人物</button>
+            <button type="button" data-kind="place">地点</button>
+            <button type="button" data-kind="item">物件</button>
+            <button type="button" data-kind="thread">伏笔</button>
+          </div>
+
+          <div class="block">
+            <div class="block-head">
+              <h4>graph · 焦点一跳</h4>
+              <button type="button" class="rel-toggle" id="reset">回到林晚</button>
+            </div>
+            <div class="graph" id="graph">
+              <svg viewBox="0 0 620 480" id="svg"></svg>
+              <div class="g-hud">
+                <b id="focus-label">焦点 · 林晚</b>
+                <button type="button" class="rel-toggle" id="rel-toggle">标关系</button>
+              </div>
+            </div>
+            <div class="legend"><span>拖动画布</span><span>回目切的是活边，不是另画一张图</span></div>
+          </div>
+
+          <div class="ov-group" id="rows-title">林晚的一跳</div>
+          <div id="rows"></div>
+          <div class="ov-group">未收束 · 不连边</div>
+          <ul class="claim-list" id="threads"></ul>
+        </div>
+        <div class="tabbar">
+          <a href="./memory-novel-play.html" style="text-align:center;padding:10px 0 14px;font-size:12px;color:#888;text-decoration:none">演绎</a>
+          <span class="on">书中图</span>
+        </div>
+        <div class="sheet" id="sheet">
+          <div class="sheet-card">
+            <div class="sheet-head"><b id="sheet-title">节点</b><button class="x" type="button" id="sheet-close">×</button></div>
+            <div id="sheet-body"></div>
+            <button type="button" class="rel-toggle on" id="center-node" style="margin-top:12px">以此为中心</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <h3>这一屏在验什么</h3>
+        <ul>
+          <li>焦点可切。默认林晚；条上点赵捕头 / 阿秀 / 账本，相机和列表都改成那一跳。点节点也是切焦点，不先弹 sheet。</li>
+          <li>回目滑条读的是同一张 <code>novel:linwan</code>。第 1 回只有码头和腰牌；第 10 回林晚在耳房，阿秀失踪，账本仍未收束。</li>
+          <li><code>located_in</code> / <code>status</code> / <code>is_a</code> / <code>wants</code> 是功能边：后回盖前回。全书视图只留最后一条。</li>
+          <li>伏笔（账本 → 未收束）和失踪、假腰牌用虚线圈，不发明「阴谋」一类谓语。</li>
+          <li>一屏仍只保证焦点一跳。人多了就拖；同型多了收簇。不转 3D 球。</li>
+        </ul>
+        <div class="spec">{
+  "type": "graph",
+  "v": 1,
+  "props": {
+    "mode": "overview",
+    "graphId": "novel:linwan",
+    "focus": "林晚",
+    "chapter": 10,
+    "edges": [
+      {"s": "林晚", "p": "located_in", "o": "耳房"},
+      {"s": "林晚", "p": "related_to", "o": "赵捕头"},
+      {"s": "账本", "p": "foreshadow", "o": "未收束"}
+    ]
+  }
+}</div>
+        <p>宿主按回目切 <code>facts(..., at=)</code> 或自己滤边。模型不写总览，也不传坐标。</p>
+      </div>
+    </div>
+  </div>
+  <script>
+    const LABELS = {
+      is_a: "是", named: "名叫", located_in: "位于", knows: "知道",
+      wants: "想要", has_item: "持有", related_to: "相关", status: "状态",
+      foreshadow: "伏笔", appears_in: "出场于",
+    };
+    const FUNCTIONAL = new Set(["located_in", "status", "is_a", "wants"]);
+    const KIND_OF = {
+      林晚: "person", 赵捕头: "person", 王二: "person", 阿秀: "person",
+      司事: "person", 县尊: "person",
+      码头: "place", 客栈: "place", 货栈: "place", 耳房: "place",
+      腰牌: "item", 旧牌: "item", 账本: "item", 铁丝: "item", 短刀: "item", 账本副本: "item",
+      捕快: "item", 脚夫: "item", 店主: "item",
+      账本秘密: "thread", 假腰牌: "thread", 翻案: "thread", 未收束: "thread",
+    };
+    const POS = {
+      林晚: [220, 210], 赵捕头: [70, 120], 王二: [70, 280], 阿秀: [220, 330],
+      司事: [40, 200], 县尊: [90, 40],
+      码头: [400, 70], 货栈: [500, 50], 客栈: [500, 140], 耳房: [500, 230],
+      腰牌: [360, 300], 旧牌: [430, 300], 账本: [360, 360], 铁丝: [430, 360],
+      短刀: [500, 330], 账本副本: [500, 390],
+      捕快: [300, 70], 脚夫: [40, 340], 店主: [300, 390],
+      账本秘密: [140, 390], 假腰牌: [40, 390], 翻案: [220, 430], 未收束: [300, 450],
+    };
+    const EDGES = [
+      { s: "林晚", p: "is_a", o: "捕快", from: 1 },
+      { s: "林晚", p: "has_item", o: "腰牌", from: 1, until: 9 },
+      { s: "林晚", p: "located_in", o: "码头", from: 1, until: 3 },
+      { s: "林晚", p: "related_to", o: "赵捕头", from: 1 },
+      { s: "林晚", p: "related_to", o: "王二", from: 1 },
+      { s: "赵捕头", p: "located_in", o: "货栈", from: 1 },
+      { s: "王二", p: "status", o: "已死", from: 1 },
+      { s: "赵捕头", p: "is_a", o: "捕快", from: 2 },
+      { s: "货栈", p: "located_in", o: "码头", from: 2 },
+      { s: "林晚", p: "has_item", o: "账本", from: 2 },
+      { s: "账本", p: "foreshadow", o: "未收束", from: 2 },
+      { s: "王二", p: "is_a", o: "脚夫", from: 3 },
+      { s: "林晚", p: "knows", o: "账本秘密", from: 3 },
+      { s: "林晚", p: "knows", o: "假腰牌", from: 3 },
+      { s: "赵捕头", p: "knows", o: "假腰牌", from: 3 },
+      { s: "林晚", p: "located_in", o: "客栈", from: 4, until: 4 },
+      { s: "客栈", p: "located_in", o: "码头", from: 4 },
+      { s: "阿秀", p: "is_a", o: "店主", from: 4 },
+      { s: "阿秀", p: "related_to", o: "王二", from: 4 },
+      { s: "阿秀", p: "related_to", o: "林晚", from: 4 },
+      { s: "林晚", p: "has_item", o: "旧牌", from: 4 },
+      { s: "林晚", p: "wants", o: "翻案", from: 4 },
+      { s: "林晚", p: "located_in", o: "码头", from: 5, until: 6 },
+      { s: "林晚", p: "has_item", o: "短刀", from: 5 },
+      { s: "司事", p: "status", o: "受伤", from: 5 },
+      { s: "林晚", p: "has_item", o: "铁丝", from: 6 },
+      { s: "王二", p: "related_to", o: "赵捕头", from: 7 },
+      { s: "林晚", p: "located_in", o: "客栈", from: 7, until: 8 },
+      { s: "林晚", p: "located_in", o: "耳房", from: 9 },
+      { s: "阿秀", p: "has_item", o: "账本副本", from: 9 },
+      { s: "阿秀", p: "status", o: "失踪", from: 10 },
+      { s: "赵捕头", p: "related_to", o: "林晚", from: 10 },
+    ];
+    const THREADS = [
+      { from: 2, text: "账本未收束：谁结的、结给谁" },
+      { from: 3, text: "腰牌可能是假的" },
+      { from: 5, text: "短刀栽赃，尚未决" },
+      { from: 10, text: "阿秀失踪，账本副本在她身上" },
+    ];
+    const TITLES = ["全书", "腰牌", "码头", "西巷", "客栈", "刀", "已死", "师父", "知道", "翻案", "未收束"];
+
+    const state = { chapter: 10, kind: "all", focus: "林晚", showRel: false };
+    let camX = 0;
+    let camY = 0;
+    let sheetFocus = "林晚";
+
+    const svg = document.getElementById("svg");
+    const graph = document.getElementById("graph");
+    const rowsEl = document.getElementById("rows");
+    const threadsEl = document.getElementById("threads");
+
+    const kindOf = (name) => KIND_OF[name] || "item";
+    const liveAt = (ch) => {
+      const active = ch === 0
+        ? EDGES.slice()
+        : EDGES.filter((e) => e.from <= ch && (e.until == null || e.until >= ch));
+      if (ch !== 0) return active;
+      const latest = new Map();
+      const keep = [];
+      for (const e of active) {
+        if (!FUNCTIONAL.has(e.p)) { keep.push(e); continue; }
+        latest.set(`${e.s}|${e.p}`, e);
+      }
+      return keep.concat([...latest.values()]);
+    };
+
+    const applyCam = () => { svg.style.transform = `translate(${camX}px, ${camY}px)`; };
+    const hopOf = (name, edges) => edges.filter((e) => e.s === name || e.o === name);
+    const syncFocusChips = () => {
+      const live = liveAt(state.chapter);
+      const names = [];
+      const add = (n) => { if (n && !names.includes(n)) names.push(n); };
+      add("林晚");
+      live.forEach((e) => {
+        if (kindOf(e.s) === "person") add(e.s);
+        if (kindOf(e.o) === "person") add(e.o);
+      });
+      add(state.focus);
+      const box = document.getElementById("focuses");
+      box.innerHTML = names.map((n) =>
+        `<button type="button" data-focus="${n}" class="${n === state.focus ? "on" : ""}">${n}</button>`
+      ).join("");
+    };
+    const focusTo = (name, openSheet) => {
+      const pos = POS[name];
+      if (!pos) return;
+      state.focus = name;
+      sheetFocus = name;
+      camX = graph.clientWidth / 2 - pos[0];
+      camY = graph.clientHeight / 2 - pos[1];
+      applyCam();
+      document.getElementById("focus-label").textContent = `焦点 · ${name} · 点此看明细`;
+      document.querySelector(".topbar .title").textContent = `${name} · 十回`;
+      document.getElementById("rows-title").textContent = `${name}的一跳`;
+      render();
+      if (openSheet) openDetail(name);
+    };
+    const openDetail = (name) => {
+      const edges = hopOf(name, visible());
+      document.getElementById("sheet-title").textContent = name;
+      document.getElementById("sheet-body").innerHTML = edges.map((e) =>
+        `<div class="ov-row"><span>${e.s}</span><em>${LABELS[e.p]}</em><span>${e.o}</span></div>`
+      ).join("") || "<p style='color:#8b7a6b;font-size:13px'>这一跳是空的。</p>";
+      document.getElementById("sheet").classList.add("open");
+    };
+
+    const edgeKind = (e) => {
+      if (e.p === "foreshadow" || kindOf(e.o) === "thread" || kindOf(e.s) === "thread") return "thread";
+      if (kindOf(e.s) === "person" && kindOf(e.o) === "person") return "person";
+      if (kindOf(e.s) === "place" || kindOf(e.o) === "place") return "place";
+      if (kindOf(e.s) === "item" || kindOf(e.o) === "item") return "item";
+      return "person";
+    };
+
+    const visible = () =>
+      liveAt(state.chapter).filter((e) => state.kind === "all" || edgeKind(e) === state.kind);
+
+    const drawNode = (name, hopNodes) => {
+      if (!POS[name]) return "";
+      const [x, y] = POS[name];
+      const kind = kindOf(name);
+      const onHop = hopNodes.has(name);
+      const isFocus = name === state.focus;
+      const dim = onHop ? "1" : "0.22";
+      if (kind === "person") {
+        const r = isFocus ? 26 : 18;
+        const fill = isFocus ? "#8b3d2b" : "#1c1916";
+        return `<g class="g-node" data-name="${name}" opacity="${dim}">
+          <circle cx="${x}" cy="${y}" r="${r}" fill="${fill}" />
+          <text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="${isFocus ? 12 : 10}">${name}</text>
+        </g>`;
+      }
+      const w = Math.max(40, name.length * 13);
+      const dashed = kind === "thread" ? ' stroke-dasharray="4 3"' : "";
+      const bg = isFocus ? "#f3e4dc" : (kind === "thread" ? "#f3e4dc" : "#fff");
+      const stroke = isFocus ? "#8b3d2b" : "#d9d2c5";
+      return `<g class="g-node" data-name="${name}" opacity="${dim}">
+        <rect x="${x - w / 2}" y="${y - 11}" width="${w}" height="22" rx="11" fill="${bg}" stroke="${stroke}"${dashed} />
+        <text x="${x}" y="${y + 4}" text-anchor="middle" font-size="10">${name}</text>
+      </g>`;
+    };
+
+    const render = () => {
+      const edges = visible();
+      const hop = hopOf(state.focus, edges);
+      const hopNodes = new Set([state.focus]);
+      hop.forEach((e) => { hopNodes.add(e.s); hopNodes.add(e.o); });
+      const used = new Set(hopNodes);
+      edges.forEach((e) => { used.add(e.s); used.add(e.o); });
+      const lines = edges.map((e) => {
+        const a = POS[e.s];
+        const b = POS[e.o];
+        if (!a || !b) return "";
+        const onHop = e.s === state.focus || e.o === state.focus;
+        const mx = (a[0] + b[0]) / 2;
+        const my = (a[1] + b[1]) / 2;
+        const dash = e.p === "foreshadow" ? ' stroke-dasharray="4 3"' : "";
+        return `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#8b3d2b" stroke-width="${onHop ? 1.6 : 1}" opacity="${onHop ? 1 : 0.16}"${dash} />
+          <text class="g-rel" x="${mx}" y="${my - 4}" text-anchor="middle" opacity="${onHop ? 1 : 0}">${LABELS[e.p] || e.p}</text>`;
+      }).join("");
+      const nodes = Object.keys(POS).filter((n) => used.has(n)).map((n) => drawNode(n, hopNodes)).join("");
+      svg.innerHTML = `<defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b3d2b" />
+        </marker>
+      </defs>${lines}${nodes}`;
+      document.getElementById("st-edges").textContent = hop.length;
+      document.getElementById("st-nodes").textContent = hopNodes.size;
+      document.getElementById("st-cast").textContent = [...hopNodes].filter((n) => kindOf(n) === "person").length;
+      document.getElementById("st-foreshadow").textContent = hop.filter((e) => e.p === "foreshadow").length;
+      rowsEl.innerHTML = hop.map((e) => {
+        const other = e.s === state.focus ? e.o : e.s;
+        return `<div class="ov-row" data-name="${other}"><span>${e.s}</span><em>${LABELS[e.p] || e.p}</em><span>${e.o}</span></div>`;
+      }).join("") || `<p style="color:#8b7a6b;font-size:13px">这个焦点这一回没有边。</p>`;
+      const ch = state.chapter === 0 ? 10 : state.chapter;
+      threadsEl.innerHTML = THREADS.filter((t) => t.from <= ch).map((t) => `<li>${t.text}</li>`).join("");
+      syncFocusChips();
+    };
+
+    const chapters = document.getElementById("chapters");
+    TITLES.forEach((title, i) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = i === 0 ? "全书" : `${i}`;
+      btn.title = title;
+      if (i === 10) btn.classList.add("on");
+      btn.addEventListener("click", () => {
+        state.chapter = i;
+        chapters.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === btn));
+        const liveNames = new Set();
+        liveAt(i).forEach((e) => { liveNames.add(e.s); liveNames.add(e.o); });
+        if (state.focus !== "林晚" && !liveNames.has(state.focus)) focusTo("林晚");
+        else render();
+      });
+      chapters.appendChild(btn);
+    });
+    document.getElementById("focuses").addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-focus]");
+      if (!btn) return;
+      focusTo(btn.dataset.focus);
+    });
+    document.getElementById("kinds").addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-kind]");
+      if (!btn) return;
+      state.kind = btn.dataset.kind;
+      document.querySelectorAll("#kinds button").forEach((b) => b.classList.toggle("on", b === btn));
+      render();
+    });
+
+    let dragging = false;
+    let moved = 0;
+    let sx = 0;
+    let sy = 0;
+    let ox = 0;
+    let oy = 0;
+    graph.addEventListener("pointerdown", (event) => {
+      if (event.target.closest("button, .g-hud")) return;
+      dragging = true;
+      moved = 0;
+      sx = event.clientX;
+      sy = event.clientY;
+      ox = camX;
+      oy = camY;
+      graph.classList.add("dragging");
+      graph.setPointerCapture(event.pointerId);
+    });
+    graph.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      camX = ox + event.clientX - sx;
+      camY = oy + event.clientY - sy;
+      moved += Math.abs(event.clientX - sx) + Math.abs(event.clientY - sy);
+      applyCam();
+    });
+    graph.addEventListener("pointerup", () => {
+      dragging = false;
+      graph.classList.remove("dragging");
+    });
+    svg.addEventListener("click", (event) => {
+      if (moved > 8) return;
+      const node = event.target.closest("[data-name]");
+      if (!node) return;
+      focusTo(node.dataset.name);
+    });
+    rowsEl.addEventListener("click", (event) => {
+      const row = event.target.closest("[data-name]");
+      if (!row) return;
+      focusTo(row.dataset.name);
+      document.getElementById("feed").scrollTop = 80;
+    });
+    document.getElementById("focus-label").style.cursor = "pointer";
+    document.getElementById("focus-label").addEventListener("click", () => openDetail(state.focus));
+    document.getElementById("reset").addEventListener("click", () => focusTo("林晚"));
+    document.getElementById("rel-toggle").addEventListener("click", (event) => {
+      state.showRel = !state.showRel;
+      graph.classList.toggle("show-rel", state.showRel);
+      event.currentTarget.classList.toggle("on", state.showRel);
+    });
+    document.getElementById("sheet-close").addEventListener("click", () => {
+      document.getElementById("sheet").classList.remove("open");
+    });
+    document.getElementById("center-node").addEventListener("click", () => {
+      focusTo(sheetFocus);
+      document.getElementById("sheet").classList.remove("open");
+    });
+
+    focusTo("林晚");
+  </script>
+</body>
+</html>

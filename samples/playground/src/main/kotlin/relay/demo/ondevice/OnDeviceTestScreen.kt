@@ -41,7 +41,7 @@ fun OnDeviceTestScreen(
     viewModel: OnDeviceTestViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
-    val spec = OnDeviceModels.default
+    val spec = OnDeviceModels.selectableById(state.selectedModelId) ?: OnDeviceModels.default
 
     Scaffold(
         topBar = {
@@ -62,6 +62,17 @@ fun OnDeviceTestScreen(
                         Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        Text("选择端侧模型", style = MaterialTheme.typography.labelLarge)
+                        OnDeviceModels.selectable.forEach { candidate ->
+                            val selected = candidate.id == state.selectedModelId
+                            OutlinedButton(
+                                onClick = { viewModel.selectModel(candidate.id) },
+                                enabled = state.canSelectModel && !selected,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(if (selected) "已选择：${candidate.displayName}" else candidate.displayName)
+                            }
+                        }
                         Text(spec.displayName, style = MaterialTheme.typography.titleMedium)
                         Text(
                             "运行时下载到 filesDir/models，SHA-256 校验后经 JNI 加载。",

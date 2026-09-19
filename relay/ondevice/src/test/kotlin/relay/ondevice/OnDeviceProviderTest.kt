@@ -92,29 +92,28 @@ class OnDeviceProviderTest {
     }
 
     @Test
-    fun rejectsTools() = runBlocking {
-        val engine = FakeLlamaEngine()
+    fun toolProtocolEmitsAToolCallForTheAgentToExecute() = runTest {
+        val engine = FakeLlamaEngine(
+            pieces = listOf("<tool_call>{\"name\":\"lookup\",\"arguments\":{}}</tool_call>"),
+            result = GenerateResult.Ok(promptTokens = 5, completionTokens = 1),
+        )
         engine.load("/tmp/fake.gguf")
         val provider = OnDeviceProvider(engine)
 
-        try {
-            provider.stream(
-                ChatRequest(
-                    model = OnDeviceModels.default.id,
-                    messages = listOf(Message.user("use a tool")),
-                    tools = listOf(
-                        ToolDef(
-                            name = "lookup",
-                            description = "x",
-                            parameters = buildJsonObject {},
-                        ),
-                    ),
-                ),
-            ).toList()
-            fail("expected InvalidRequest")
-        } catch (e: RelayLlmException.InvalidRequest) {
-            assertTrue(e.message!!.contains("tools"))
-        }
+        val chunks = provider.stream(
+            ChatRequest(
+                model = OnDeviceModels.default.id,
+                messages = listOf(Message.user("use a tool")),
+                tools = listOf(ToolDef("lookup", "x", buildJsonObject {})),
+            ),
+        ).toList()
+
+        val call = chunks.filterIsInstance<ChatChunk.ToolCalls>().single().delta
+        assertEquals("ondevice-tool-0", call.id)
+        assertEquals("lookup", call.name)
+        assertEquals("{}", call.argumentsDelta)
+        assertTrue(engine.lastMessages!!.first().content!!.contains("<tools>"))
+        assertTrue(engine.lastMessages!!.first().content!!.contains("\"type\":\"function\""))
     }
 
     @Test
@@ -195,6 +194,8 @@ private class FakeLlamaEngine(
     private var cancelled = false
     var lastPrompt: String? = null
         private set
+    var lastMessages: List<Message>? = null
+        private set
 
     override val isLoaded: Boolean get() = loaded
 
@@ -216,6 +217,7 @@ private class FakeLlamaEngine(
         check(messages.none { it.role == relay.llm.model.Role.TOOL }) {
             "on-device chat template does not support TOOL turns"
         }
+        lastMessages = messages
         return "formatted:${messages.size}"
     }
 

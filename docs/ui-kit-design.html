@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Relay · UIKit 对话稿</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --paper: #fffdf8;
+      --ink: #1c1916;
+      --muted: #5c564e;
+      --line: #d9d2c5;
+      --accent: #8b3d2b;
+      --accent-soft: #f3e4dc;
+      --ok: #2d5a3d;
+      --ok-soft: #e4efe6;
+      --chip: #eef2f6;
+      --phone: #f6f7f8;
+      --bubble: #eceef1;
+      --card: #ffffff;
+      --shadow: 0 18px 50px rgba(28, 25, 22, 0.12);
+      --mono: "SF Mono", "Menlo", "Consolas", monospace;
+      --sans: "Iowan Old Style", "Palatino Linotype", Palatino, "Songti SC", serif;
+      --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.6;
+    }
+    a { color: var(--accent); }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 96px; }
+    .kicker {
+      font-family: var(--ui);
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 8px;
+    }
+    h1 { font-size: 34px; line-height: 1.15; margin: 0 0 12px; font-weight: 650; }
+    .lead { font-size: 18px; color: var(--muted); margin: 0 0 28px; max-width: 46rem; }
+    h2 {
+      font-family: var(--ui);
+      font-size: 20px;
+      margin: 56px 0 12px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+    }
+    p { margin: 0 0 12px; }
+    code {
+      font-family: var(--mono);
+      font-size: 0.86em;
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+    .layers {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin: 24px 0 8px;
+    }
+    .layer {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+    }
+    .layer b { display: block; font-family: var(--ui); margin-bottom: 6px; }
+    .layer span { color: var(--muted); font-size: 14px; }
+
+    .stage {
+      display: grid;
+      grid-template-columns: 390px 1fr;
+      gap: 28px;
+      align-items: start;
+      margin-top: 28px;
+    }
+    .phone {
+      width: 390px;
+      height: 820px;
+      background: var(--phone);
+      border-radius: 36px;
+      border: 10px solid #1c1916;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      font-family: var(--ui);
+      position: relative;
+    }
+    .status {
+      height: 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 18px;
+      font-size: 12px;
+      color: #444;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px 12px;
+      border-bottom: 1px solid #ececec;
+      background: #fff;
+    }
+    .topbar .title { flex: 1; font-weight: 620; font-size: 15px; }
+    .icon {
+      width: 28px; height: 28px; border-radius: 8px;
+      display: grid; place-items: center;
+      background: #f3f4f6; color: #333; font-size: 14px;
+    }
+    .feed {
+      flex: 1;
+      overflow: auto;
+      padding: 14px 14px 8px;
+    }
+    .user {
+      display: flex;
+      justify-content: flex-end;
+      margin: 10px 0 16px;
+    }
+    .bubble {
+      max-width: 86%;
+      background: var(--bubble);
+      border-radius: 18px;
+      padding: 10px 13px;
+      font-size: 14px;
+    }
+    .chip-inline {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #fff;
+      border-radius: 999px;
+      padding: 2px 8px 2px 4px;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .dot {
+      width: 16px; height: 16px; border-radius: 5px;
+      background: #dbe4ef; display: grid; place-items: center; font-size: 10px;
+    }
+    .turn { margin: 4px 0 18px; }
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--ok);
+      font-size: 13px;
+      font-weight: 620;
+      margin: 8px 0;
+    }
+    .check {
+      width: 16px; height: 16px; border-radius: 50%;
+      background: #2f7a4a; color: #fff;
+      display: grid; place-items: center; font-size: 10px;
+    }
+    .body { font-size: 14px; color: #222; margin: 0 0 10px; }
+    .process { display: grid; gap: 8px; margin: 10px 0 12px; }
+    .process button {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      padding: 0;
+      font: inherit;
+      color: #2a5d8f;
+      font-size: 13.5px;
+      cursor: pointer;
+    }
+    .process button:hover { text-decoration: underline; }
+    .kv {
+      display: grid;
+      gap: 8px;
+      background: var(--card);
+      border: 1px solid #ececec;
+      border-radius: 14px;
+      padding: 10px 12px;
+      margin: 8px 0;
+    }
+    .kv-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+    .kv-row span { color: var(--muted); }
+    .block {
+      background: var(--card);
+      border: 1px solid #ececec;
+      border-radius: 16px;
+      padding: 12px;
+      margin: 10px 0;
+    }
+    .block h4 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid #f0f0f0; }
+    th { color: var(--muted); font-weight: 550; }
+    .bars { display: grid; gap: 8px; }
+    .bar { display: grid; grid-template-columns: 72px 1fr 28px; gap: 8px; align-items: center; font-size: 12px; }
+    .bar i {
+      display: block; height: 8px; border-radius: 99px;
+      background: linear-gradient(90deg, #8b3d2b, #c97a5a);
+    }
+    .file {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--card);
+      border: 1px solid #ececec;
+      border-radius: 14px;
+      padding: 10px 12px;
+      margin: 8px 0;
+      cursor: pointer;
+    }
+    .file:hover { border-color: #d3c7b8; }
+    .file-ico {
+      width: 36px; height: 36px; border-radius: 10px;
+      display: grid; place-items: center; color: #fff; font-size: 11px; font-weight: 700;
+    }
+    .file b { display: block; font-size: 13px; }
+    .file small { color: var(--muted); font-size: 12px; }
+    .md-doc {
+      font-size: 14px;
+      color: #222;
+    }
+    .md-doc h1 { font-size: 20px; margin: 0 0 10px; }
+    .md-doc h2 { font-size: 15px; margin: 18px 0 8px; border: 0; padding: 0; font-family: inherit; }
+    .md-doc h3 { font-size: 13px; margin: 12px 0 6px; color: var(--muted); font-family: var(--ui); }
+    .md-doc ul { margin: 0 0 10px; padding-left: 1.2em; }
+    .md-doc li { margin: 4px 0; }
+    .md-doc p { margin: 0 0 8px; font-size: 14px; }
+    .md-doc code { font-size: 12px; }
+    .md-doc blockquote {
+      margin: 8px 0 12px;
+      padding: 6px 0 6px 10px;
+      border-left: 3px solid #e2c4b6;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    #mdview .canvas-card,
+    #htmlview .canvas-card { max-height: 88%; }
+    .html-frame {
+      border: 1px solid #1c1916;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #14110e;
+    }
+    .more {
+      border: 0; background: none; color: #2a5d8f; font-size: 13px;
+      padding: 4px 0; cursor: pointer; font-family: inherit;
+    }
+    .actions {
+      display: flex; gap: 10px; align-items: center;
+      color: #666; font-size: 14px; margin-top: 8px;
+    }
+    .graph {
+      height: 210px;
+      border-radius: 12px;
+      background:
+        radial-gradient(circle at 20% 20%, #f3e4dc 0, transparent 36%),
+        #faf8f4;
+      position: relative;
+      overflow: hidden;
+    }
+    .graph svg { width: 100%; height: 100%; display: block; }
+    .graph.overview svg {
+      width: 640px;
+      height: 520px;
+      max-width: none;
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+    .graph text { font-family: var(--ui); }
+    .g-rel {
+      font-size: 8.5px;
+      fill: #8b3d2b;
+      paint-order: stroke;
+      stroke: #faf8f4;
+      stroke-width: 3px;
+      stroke-linejoin: round;
+    }
+    .graph:not(.show-rel) .g-rel { display: none; }
+    .block-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 8px;
+    }
+    .block-head h4 { margin: 0; }
+    .rel-toggle {
+      appearance: none; border: 1px solid #ececec; background: #fff;
+      border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 11px;
+      color: var(--muted); cursor: pointer;
+    }
+    .rel-toggle.on { background: var(--accent-soft); border-color: #e2c4b6; color: var(--accent); }
+    .g-node { cursor: pointer; }
+    .claim-list { margin: 8px 0 0; padding: 0; list-style: none; }
+    .claim-list li {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 4px 0 4px 14px;
+      position: relative;
+    }
+    .claim-list li::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 10px;
+      width: 7px; height: 7px;
+      border: 1.5px dashed #8b3d2b;
+      border-radius: 50%;
+    }
+    .legend {
+      display: flex; gap: 12px; font-size: 11px; color: var(--muted); margin-top: 8px;
+    }
+    .legend i { display: inline-block; width: 16px; height: 0; border-top: 2px solid #8b3d2b; vertical-align: middle; margin-right: 4px; }
+    .legend i.dash { border-top-style: dashed; border-color: #8b7a6b; }
+    .ov-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .ov-stat {
+      background: #fff;
+      border: 1px solid #ececec;
+      border-radius: 12px;
+      padding: 8px 6px;
+      text-align: center;
+    }
+    .ov-stat b { display: block; font-size: 16px; line-height: 1.2; }
+    .ov-stat span { font-size: 10px; color: var(--muted); }
+    .ov-search {
+      width: 100%;
+      border: 1px solid #ececec;
+      border-radius: 12px;
+      background: #fff;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .ov-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .ov-chips button {
+      appearance: none; border: 1px solid #ececec; background: #fff;
+      border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px;
+      color: var(--muted); cursor: pointer;
+    }
+    .ov-chips button.on { background: var(--accent-soft); border-color: #e2c4b6; color: var(--accent); }
+    .graph.overview {
+      height: 268px;
+      cursor: grab;
+      touch-action: none;
+    }
+    .graph.overview.dragging { cursor: grabbing; }
+    .graph.overview svg { width: 640px; height: 520px; }
+    .g-hud {
+      position: absolute; left: 8px; right: 8px; bottom: 8px;
+      display: flex; justify-content: space-between; align-items: center;
+      pointer-events: none;
+    }
+    .g-hud b, .g-hud button { pointer-events: auto; }
+    .g-hud b {
+      background: rgba(255,253,248,0.92);
+      border: 1px solid #e8e0d4;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 550;
+      color: var(--muted);
+    }
+    .g-tools { display: flex; gap: 6px; }
+    .g-tools button {
+      appearance: none; border: 1px solid #e8e0d4; background: rgba(255,253,248,0.92);
+      border-radius: 999px; padding: 3px 8px; font: inherit; font-size: 11px;
+      color: var(--muted); cursor: pointer;
+    }
+    .g-tools button.on { background: var(--accent-soft); border-color: #e2c4b6; color: var(--accent); }
+    .graph.overview::after {
+      content: "";
+      position: absolute; inset: 0;
+      pointer-events: none;
+      box-shadow: inset 0 0 0 1px rgba(217,210,197,0.7);
+      border-radius: 12px;
+    }
+    .ov-row { cursor: pointer; }
+    .ov-row:hover { background: #faf6f1; }
+    .ov-group { margin: 14px 0 6px; font-size: 12px; color: var(--muted); font-weight: 650; }
+    .ov-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 6px;
+      align-items: center;
+      font-size: 12.5px;
+      padding: 7px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .ov-row em { font-style: normal; color: var(--accent); font-size: 11px; }
+    .tabbar {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-top: 1px solid #ececec;
+      background: #fff;
+    }
+    .tabbar span {
+      text-align: center; padding: 10px 0 14px; font-size: 12px; color: #888;
+    }
+    .tabbar span.on { color: var(--ink); font-weight: 650; }
+
+    .composer {
+      padding: 10px 12px 16px;
+      background: #fff;
+      border-top: 1px solid #ececec;
+    }
+    .composer-box {
+      display: flex; align-items: center; gap: 8px;
+      background: #f3f4f6; border-radius: 999px; padding: 8px 12px;
+      color: #888; font-size: 13px;
+    }
+    .disclaimer { text-align: center; font-size: 11px; color: #999; margin-top: 8px; }
+
+    .sheet, .canvas {
+      position: absolute; inset: 0;
+      background: rgba(20, 16, 12, 0.28);
+      display: none;
+      align-items: flex-end;
+    }
+    .sheet.open, .canvas.open { display: flex; }
+    .sheet-card, .canvas-card {
+      width: 100%;
+      background: #fff;
+      border-radius: 22px 22px 0 0;
+      padding: 16px 16px 24px;
+      max-height: 72%;
+      overflow: auto;
+    }
+    .sheet-head, .canvas-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px;
+    }
+    .sheet-head b, .canvas-head b { font-size: 17px; }
+    .x {
+      border: 0; background: #f3f4f6; width: 28px; height: 28px;
+      border-radius: 50%; cursor: pointer;
+    }
+    .log { display: grid; gap: 0; }
+    .log-row {
+      display: grid; grid-template-columns: 18px 1fr;
+      gap: 8px; padding: 10px 0;
+      border-bottom: 1px solid #f1f1f1;
+      font-size: 13px;
+    }
+    .note {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px 18px 8px;
+    }
+    .note h3 { font-family: var(--ui); font-size: 16px; margin: 0 0 8px; }
+    .note ul { margin: 0 0 14px; padding-left: 18px; color: var(--muted); }
+    .spec {
+      background: #1c1916;
+      color: #f3eee6;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      overflow: auto;
+      white-space: pre;
+      margin: 8px 0 16px;
+    }
+    .catalog {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .tile {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+    }
+    .tag {
+      display: inline-block;
+      font-family: var(--ui);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-radius: 999px;
+      padding: 2px 8px;
+      margin-bottom: 8px;
+    }
+    @media (max-width: 920px) {
+      .stage, .layers, .catalog { grid-template-columns: 1fr; }
+      .phone { margin: 0 auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="kicker">Relay · UIKit mock</p>
+    <h1>对话流里的 widget，不是气泡里的排版。</h1>
+    <p class="lead">
+      对齐 <a href="./ui-kit.md">ui-kit.md</a>：<code>WidgetSpec</code> 只带数据和意图。
+      过程条归对话宿主，卡片归 <code>relay/ui-kit</code>。工具调用先出现在流里；表、图、知识图谱都是某次调用的富渲染。
+    </p>
+
+    <div class="layers">
+      <div class="layer">
+        <b>1. 过程 · 宿主</b>
+        <span>ToolExecutionStart/End 画成可点 chip，点开底栏列动词 + 路径。不进 WidgetSpec。</span>
+      </div>
+      <div class="layer">
+        <b>2. 正文 · 文本项</b>
+        <span>流式 text chunk 进当前草稿。遇到 UI 工具就封口，再开新草稿。</span>
+      </div>
+      <div class="layer">
+        <b>3. 产物 · ui-kit</b>
+        <span>kv / table / chart / graph 按 displayMode 穿泡或破泡。模型不设像素。</span>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="phone" aria-label="Playground 对话稿">
+        <div class="status"><span>11:15</span><span>5G  64%</span></div>
+        <div class="topbar">
+          <div class="icon">☰</div>
+          <div class="title">包装车管家项目</div>
+          <div class="icon">＋</div>
+          <div class="icon">···</div>
+        </div>
+        <div class="feed">
+          <div class="user">
+            <div class="bubble">
+              <div class="chip-inline"><span class="dot">档</span>简历</div>
+              车管家和鸿蒙哪个放前面？客户端开发方向，帮我把项目经历收成一张表，再画一下技术栈。
+            </div>
+          </div>
+
+          <div class="turn">
+            <div class="status-row"><span class="check">✓</span> 已完成</div>
+            <p class="body">先按记忆里的经历对齐。稳定关系进图，架构细节走 Claim。</p>
+            <div class="process">
+              <button type="button" data-open="sheet">执行操作 memory_query ›</button>
+              <button type="button" data-open="sheet">已召回 6 条事实 · 4 条经历 ›</button>
+              <button type="button" data-open="sheet">已渲染 table / chart ›</button>
+              <button type="button" data-open="sheet">已写入 项目经历.md / .html ›</button>
+            </div>
+            <p class="body">求职方向是客户端，不是当前职位。车管家花时间最多，鸿蒙是集大成，SDK 垫底。</p>
+
+            <div class="kv" title="inline kv，可进气泡；这里单独成卡是为了看清结构">
+              <div class="kv-row"><span>求职方向</span><b>客户端开发</b></div>
+              <div class="kv-row"><span>工龄</span><b>两年安卓</b></div>
+              <div class="kv-row"><span>最近</span><b>一个月鸿蒙重构</b></div>
+            </div>
+
+            <div class="block">
+              <h4>table · block</h4>
+              <table>
+                <thead><tr><th>项目</th><th>位置</th><th>要点</th></tr></thead>
+                <tbody>
+                  <tr><td>车管家</td><td>1</td><td>卡片引擎 · H5 / JSBridge</td></tr>
+                  <tr><td>鸿蒙重构</td><td>2</td><td>Repository 策略 · 分层</td></tr>
+                  <tr><td>网络 SDK</td><td>3</td><td>Java + Retrofit</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="block">
+              <h4>chart · block</h4>
+              <div class="bars">
+                <div class="bar"><span>安卓</span><i style="width:92%"></i><span>2y</span></div>
+                <div class="bar"><span>鸿蒙</span><i style="width:38%"></i><span>1m</span></div>
+                <div class="bar"><span>Java</span><i style="width:70%"></i><span>✓</span></div>
+                <div class="bar"><span>Retrofit</span><i style="width:64%"></i><span>✓</span></div>
+              </div>
+            </div>
+
+            <div class="file" data-open="mdview">
+              <div class="file-ico" style="background:#2d5a3d">MD</div>
+              <div>
+                <b>已生成 项目经历.md</b>
+                <small>markdown · 约 1200 字 · 点击查看</small>
+              </div>
+            </div>
+            <div class="file" data-open="htmlview">
+              <div class="file-ico" style="background:#8b3d2b">HTML</div>
+              <div>
+                <b>已生成 项目经历.html</b>
+                <small>html · WebView 极限 · 点击查看</small>
+              </div>
+            </div>
+            <div class="file" data-open="canvas">
+              <div class="file-ico" style="background:#2f6f9e">表</div>
+              <div><b>项目排序</b><small>table · 3 行</small></div>
+            </div>
+            <div class="file" data-open="canvas">
+              <div class="file-ico" style="background:#8b3d2b">图</div>
+              <div><b>技术栈</b><small>chart · bar</small></div>
+            </div>
+            <button class="more" type="button" data-open="canvas">本轮产物 (5) ›</button>
+            <div class="actions">⧉  ↑  ↓  ♪  ···</div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="composer-box">🎤 &nbsp; 发消息或按住说话 &nbsp; ＋</div>
+          <div class="disclaimer">内容由模型生成 · widget 由 ui-kit 渲染</div>
+        </div>
+
+        <div class="sheet" id="sheet">
+          <div class="sheet-card">
+            <div class="sheet-head"><b>工具调用</b><button class="x" type="button" data-close>×</button></div>
+            <div class="log">
+              <div class="log-row"><span class="check">✓</span><span>已查询 memory · 「车管家 鸿蒙 客户端」</span></div>
+              <div class="log-row"><span class="check">✓</span><span>已命中 用户 target_role 客户端开发</span></div>
+              <div class="log-row"><span class="check">✓</span><span>已命中 用户 worked_on 车管家</span></div>
+              <div class="log-row"><span class="check">✓</span><span>已命中 Claim · 云端下发卡片并由车端渲染</span></div>
+              <div class="log-row"><span class="check">✓</span><span>已命中 Claim · Repository 策略模式</span></div>
+              <div class="log-row"><span class="check">✓</span><span>render_table · 3 行项目排序</span></div>
+              <div class="log-row"><span class="check">✓</span><span>render_chart · 技术栈条形图</span></div>
+              <div class="log-row"><span class="check">✓</span><span>write_artifact · 项目经历.md</span></div>
+              <div class="log-row"><span class="check">✓</span><span>write_artifact · 项目经历.html</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="canvas" id="canvas">
+          <div class="canvas-card">
+            <div class="canvas-head"><b>本轮 widget</b><button class="x" type="button" data-close>×</button></div>
+            <div class="file" data-open="mdview"><div class="file-ico" style="background:#2d5a3d">MD</div><div><b>项目经历.md</b><small>markdown · 点开渲染</small></div></div>
+            <div class="file" data-open="htmlview"><div class="file-ico" style="background:#8b3d2b">HTML</div><div><b>项目经历.html</b><small>html · 沙箱 WebView</small></div></div>
+            <div class="file"><div class="file-ico" style="background:#6b5a48">KV</div><div><b>求职方向</b><small>kv · target_role / 工龄</small></div></div>
+            <div class="file"><div class="file-ico" style="background:#2f6f9e">表</div><div><b>项目排序</b><small>table · 车管家 / 鸿蒙 / SDK</small></div></div>
+            <div class="file"><div class="file-ico" style="background:#8b3d2b">图</div><div><b>技术栈</b><small>chart · 安卓 2y · 鸿蒙 1m</small></div></div>
+          </div>
+        </div>
+        <div class="canvas" id="mdview">
+          <div class="canvas-card">
+            <div class="canvas-head"><b>项目经历.md</b><button class="x" type="button" data-close>×</button></div>
+            <div class="md-doc">
+              <h1>项目经历</h1>
+              <p>求职方向：<code>客户端开发</code>。两年安卓，最近一个月做鸿蒙。材料按「花时间最多 → 能讲架构 → 垫底补技术栈」排，不按时间倒序硬排。</p>
+              <blockquote>稳定关系来自记忆图：参与过车管家 / 鸿蒙重构 / 网络 SDK。云端下发卡、Repository 策略仍是 Claim，正文里当经历写，不发明新谓语。</blockquote>
+
+              <h2>1. 车管家 · 卡片引擎</h2>
+              <p>车机侧应用。核心不是做了多少页面，而是卡片怎么从云端走到车端屏幕上。</p>
+              <h3>职责</h3>
+              <ul>
+                <li>卡片引擎：模板、数据、刷新节奏收在同一条管里</li>
+                <li>云端下发卡片描述，车端按描述动态渲染，避免每个业务方各写一套原生页</li>
+                <li>H5 卡片和原生容器之间走 JSBridge：取车况、跳原生、回传点击</li>
+              </ul>
+              <h3>技术</h3>
+              <ul>
+                <li>Android 容器 + H5</li>
+                <li>JSBridge 约定：方法名、线程、失败回包</li>
+              </ul>
+              <h3>可讲的点</h3>
+              <p>面试官若问「为什么不全部原生」，答：业务卡片迭代快、车端发版慢，下发描述比跟版更划算。坑在 Bridge 超时和车端 WebView 内存，需要降级成静态底图，而不是转圈到死。</p>
+
+              <h2>2. 鸿蒙重构 · Repository 分层</h2>
+              <p>最近一个月。不是从零做产品，是把已有数据访问收成可替换策略，方便本地 / 网络切换。</p>
+              <h3>职责</h3>
+              <ul>
+                <li>Repository 层：界面只打领域接口，不直接碰网络或磁盘</li>
+                <li>策略模式：本地缓存、网络拉取、失败回落分成可替换实现</li>
+                <li>和安卓侧旧代码对齐字段，避免两边各讲各的</li>
+              </ul>
+              <h3>可讲的点</h3>
+              <p>一个月写不完「整个鸿蒙」。简历上要写成「完成数据层策略拆分，并在列表场景跑通本地优先」，不要写成「主导鸿蒙架构」。鸿蒙是加分项，安卓两年才是底。</p>
+
+              <h2>3. 网络 SDK</h2>
+              <p>安卓期间的基础库，排在最后。用来证明 Java 和网络栈，不抢前两个项目的篇幅。</p>
+              <ul>
+                <li>Java + Retrofit</li>
+                <li>统一错误码、重试、日志拦截</li>
+                <li>给业务模块的是一套调用约定，不是每个页面自己 new OkHttp</li>
+              </ul>
+
+              <h2>怎么说、不怎么说</h2>
+              <ul>
+                <li>先说车管家，再鸿蒙，最后 SDK。顺序服务「客户端」这个方向，不是服务时间线。</li>
+                <li>鸿蒙一个月不要压过两年安卓。对方若只看关键词，把安卓能力写在车管家和 SDK 里。</li>
+                <li>Claim 里的细节（云端下发、策略模式）可以进 STAR 的 Action，不要收成图上的假边。</li>
+              </ul>
+              <p>准备时间不够、打算下周投的话，这份只够改一版简历项目栏。数字和量化结果还空着，下一轮再补。</p>
+            </div>
+          </div>
+        </div>
+        <div class="canvas" id="htmlview">
+          <div class="canvas-card">
+            <div class="canvas-head"><b>项目经历.html</b><button class="x" type="button" data-close>×</button></div>
+            <div class="html-frame">
+              <div class="wv">
+                <style>
+                  .wv { --c:#c97a5a; --ink:#f6efe6; --dim:#b6aaa0; --bg:#14110e; --card:#1e1915; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; color:var(--ink); background:var(--bg); }
+                  .wv * { box-sizing:border-box; }
+                  .wv input { position:absolute; opacity:0; pointer-events:none; }
+                  .wv-hero { position:relative; padding:22px 16px 18px; overflow:hidden; }
+                  .wv-hero::before { content:""; position:absolute; inset:-40% -20% auto; height:180px; background:conic-gradient(from 210deg,#8b3d2b,#2f6f9e,#c97a5a,#8b3d2b); filter:blur(28px); opacity:.55; animation:wvspin 16s linear infinite; }
+                  .wv-hero::after { content:""; position:absolute; inset:0; background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(255,255,255,.03) 3px); pointer-events:none; }
+                  @keyframes wvspin { to { transform:rotate(1turn); } }
+                  @keyframes wvup { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+                  @keyframes wvbar { from { width:0; } }
+                  .wv-kicker { position:relative; font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--c); }
+                  .wv-hero h1 { position:relative; margin:8px 0 4px; font-size:26px; line-height:1.1; font-weight:700; }
+                  .wv-hero p { position:relative; margin:0; font-size:12px; color:var(--dim); }
+                  .wv-nav { position:sticky; top:0; z-index:2; display:grid; grid-template-columns:repeat(4,1fr); gap:4px; padding:8px; background:rgba(20,17,14,.82); backdrop-filter:blur(14px); border-bottom:1px solid rgba(255,255,255,.06); }
+                  .wv-nav label { text-align:center; font-size:11px; padding:6px 0; border-radius:999px; color:var(--dim); }
+                  .wv #w1:checked ~ .wv-nav label[for=w1],
+                  .wv #w2:checked ~ .wv-nav label[for=w2],
+                  .wv #w3:checked ~ .wv-nav label[for=w3],
+                  .wv #w4:checked ~ .wv-nav label[for=w4] { background:var(--c); color:#1c1916; font-weight:650; }
+                  .wv-panel { display:none; padding:12px 14px 18px; animation:wvup .35s ease; }
+                  .wv #w1:checked ~ .p1,
+                  .wv #w2:checked ~ .p2,
+                  .wv #w3:checked ~ .p3,
+                  .wv #w4:checked ~ .p4 { display:block; }
+                  .wv h2 { margin:0 0 8px; font-size:16px; }
+                  .wv h3 { margin:14px 0 6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--c); }
+                  .wv p { margin:0 0 8px; font-size:13px; color:#e8dfd4; }
+                  .arch { display:grid; grid-template-columns:1fr auto 1fr auto 1fr; gap:4px; align-items:center; margin:10px 0 12px; }
+                  .arch b { display:block; background:var(--card); border:1px solid rgba(255,255,255,.08); border-radius:10px; padding:8px 6px; text-align:center; font-size:10px; }
+                  .arch span { color:var(--c); font-size:14px; }
+                  .chips { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 12px; }
+                  .chips i { font-style:normal; font-size:11px; padding:3px 8px; border-radius:999px; background:#2a211c; color:#f0d2c4; }
+                  .meter { display:grid; grid-template-columns:54px 1fr 28px; gap:6px; align-items:center; font-size:11px; color:var(--dim); margin:5px 0; }
+                  .meter u { display:block; height:6px; border-radius:99px; background:#2a211c; }
+                  .meter u i { display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,#8b3d2b,#c97a5a); animation:wvbar .8s ease; }
+                  .rings { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:8px 0 12px; text-align:center; }
+                  .rings b { display:grid; place-items:center; width:64px; height:64px; margin:0 auto 4px; border-radius:50%; color:#fff; font-size:12px; }
+                  .r1 { background:conic-gradient(#c97a5a 0 92%, #2a211c 0); }
+                  .r2 { background:conic-gradient(#c97a5a 0 38%, #2a211c 0); }
+                  .r3 { background:conic-gradient(#c97a5a 0 70%, #2a211c 0); }
+                  .rings b::after { content:""; width:46px; height:46px; border-radius:50%; background:var(--bg); }
+                  .rings b { position:relative; }
+                  .rings b em { position:absolute; font-style:normal; z-index:1; }
+                  .tl { border-left:2px solid #3a2e28; margin:8px 0 0 8px; padding:0 0 4px 12px; }
+                  .tl div { position:relative; margin:0 0 12px; }
+                  .tl div::before { content:""; position:absolute; left:-17px; top:5px; width:8px; height:8px; border-radius:50%; background:var(--c); box-shadow:0 0 0 3px #2a211c; }
+                  .tl small { color:var(--dim); font-size:11px; }
+                  .wv details { background:var(--card); border-radius:12px; padding:8px 10px; margin:8px 0; }
+                  .wv summary { cursor:pointer; font-size:12px; color:var(--c); }
+                  .quote { margin:10px 0; padding:10px; border-radius:12px; background:linear-gradient(135deg,#2a1814,#1e1915); font-size:12px; color:#f0d2c4; }
+                </style>
+                <input type="radio" name="wvtab" id="w1" checked>
+                <input type="radio" name="wvtab" id="w2">
+                <input type="radio" name="wvtab" id="w3">
+                <input type="radio" name="wvtab" id="w4">
+                <header class="wv-hero">
+                  <div class="wv-kicker">local webview · no cdn</div>
+                  <h1>项目经历</h1>
+                  <p>客户端开发 · 两年安卓垫底 · 鸿蒙只做加分</p>
+                </header>
+                <nav class="wv-nav">
+                  <label for="w1">车管家</label>
+                  <label for="w2">鸿蒙</label>
+                  <label for="w3">SDK</label>
+                  <label for="w4">栈</label>
+                </nav>
+                <section class="wv-panel p1">
+                  <h2>车管家 · 卡片引擎</h2>
+                  <p>云端下发描述，车端动态渲染。核心不是页面数量，是卡片怎么走到屏幕上。</p>
+                  <div class="arch">
+                    <b>云端<br>下发</b><span>→</span><b>JSBridge</b><span>→</span><b>车端<br>渲染</b>
+                  </div>
+                  <svg viewBox="0 0 280 56" width="100%" height="56" aria-hidden="true">
+                    <path d="M4 40 C 40 40, 50 12, 90 18 S 140 48, 180 28 S 230 8, 276 22" fill="none" stroke="#c97a5a" stroke-width="2"/>
+                    <circle cx="90" cy="18" r="3" fill="#fff"/>
+                    <circle cx="180" cy="28" r="3" fill="#fff"/>
+                  </svg>
+                  <div class="chips"><i>H5</i><i>JSBridge</i><i>降级底图</i><i>车况回传</i></div>
+                  <details>
+                    <summary>面试怎么讲</summary>
+                    <p>发版慢就下发，不跟版。Bridge 超时不要转圈，落到静态底图。</p>
+                  </details>
+                </section>
+                <section class="wv-panel p2">
+                  <h2>鸿蒙重构 · 一个月</h2>
+                  <p>数据层策略拆分，不是主导整个鸿蒙架构。</p>
+                  <div class="tl">
+                    <div><small>第 1 周</small><p>对齐安卓字段，先冻结接口</p></div>
+                    <div><small>第 2–3 周</small><p>Repository：本地优先 / 网络回落</p></div>
+                    <div><small>第 4 周</small><p>列表场景跑通，策略可替换</p></div>
+                  </div>
+                  <div class="quote">简历写「完成数据层策略拆分」，不写「主导鸿蒙」。</div>
+                </section>
+                <section class="wv-panel p3">
+                  <h2>网络 SDK · 垫底</h2>
+                  <p>证明 Java 和网络栈。统一错误码、重试、日志拦截。业务模块不许自己 new OkHttp。</p>
+                  <div class="meter"><span>封装</span><u><i style="width:86%"></i></u><span>高</span></div>
+                  <div class="meter"><span>篇幅</span><u><i style="width:28%"></i></u><span>压</span></div>
+                  <details>
+                    <summary>为什么放最后</summary>
+                    <p>顺序服务「客户端」方向，不服务时间线。SDK 补技术栈，不抢车管家。</p>
+                  </details>
+                </section>
+                <section class="wv-panel p4">
+                  <h2>技术栈</h2>
+                  <div class="rings">
+                    <div><b class="r1"><em>2y</em></b>安卓</div>
+                    <div><b class="r2"><em>1m</em></b>鸿蒙</div>
+                    <div><b class="r3"><em>Java</em></b>网络</div>
+                  </div>
+                  <div class="meter"><span>安卓</span><u><i style="width:92%"></i></u><span>2y</span></div>
+                  <div class="meter"><span>鸿蒙</span><u><i style="width:38%"></i></u><span>1m</span></div>
+                  <div class="meter"><span>Retrofit</span><u><i style="width:64%"></i></u><span>✓</span></div>
+                  <p>图和表仍是 ui-kit 的活。这份 HTML 只证明：附件可以比 MD 更像一页站。</p>
+                </section>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <h3>这一屏在验什么</h3>
+        <ul>
+          <li>用户短句进气泡；助手回合是 <b>turn group</b>，不套第二层灰泡。</li>
+          <li>过程 chip 可点，底栏是 tool log。这是胶水，不是 ui-kit。</li>
+          <li><code>kv</code> 小，可 inline；<code>table</code> / <code>chart</code> 破泡成中性卡。</li>
+          <li>能落盘的长文走 <code>file</code>：流里写「已生成 xx.md / xx.html」，点开本屏渲染。不是 pptx。</li>
+          <li>短 MD 走气泡。长 MD 走原生渲染器。HTML 走沙箱 WebView，都是点开看，不丢到系统浏览器。</li>
+          <li>HTML 吃满本地 WebView：栅格、sticky、backdrop、CSS 动画、conic 环、SVG、<code>:checked</code> 页签、<code>details</code>。不拉 CDN，不跑任意脚本。外网和 eval 仍关。</li>
+          <li>记忆 capture 吃文本 + <code>summary()</code>，不吃 tool ack，不吃原始 spec JSON。</li>
+        </ul>
+
+        <h3>模型只产出这个</h3>
+        <div class="spec">{
+  "type": "table",
+  "v": 1,
+  "props": {
+    "columns": ["项目", "位置", "要点"],
+    "rows": [
+      ["车管家", "1", "卡片引擎 · H5 / JSBridge"],
+      ["鸿蒙重构", "2", "Repository 策略 · 分层"],
+      ["网络 SDK", "3", "Java + Retrofit"]
+    ]
+  }
+}</div>
+        <p>文件卡只带名字和 ref，不带全文。点开宿主读附件，markdown 渲染器画 canvas。没有颜色、字号、圆角。脏 JSON 降级成 <code>summary()</code>，气泡不崩。</p>
+        <div class="spec">{
+  "type": "file",
+  "v": 1,
+  "props": {
+    "name": "项目经历.md",
+    "mime": "text/markdown",
+    "ref": "artifact:项目经历.md"
+  }
+}</div>
+        <div class="spec">{
+  "type": "file",
+  "v": 1,
+  "props": {
+    "name": "项目经历.html",
+    "mime": "text/html",
+    "ref": "artifact:项目经历.html"
+  }
+}</div>
+      </div>
+    </div>
+
+    <h2>记忆总览：用户自己翻库</h2>
+    <p class="lead" style="margin-top:0">
+      这不是对话里的一跳切片。侧栏进「记忆」，宿主直读
+      <code>facts()</code> + <code>claims()</code> + <code>unconsumed()</code>，
+      不经过模型。同一套 <code>graph</code> 渲染器；对话回合若要画邻域，只是换一份更小的边。
+    </p>
+
+    <div class="stage">
+      <div class="phone" id="overview-phone" aria-label="记忆总览">
+        <div class="status"><span>11:22</span><span>5G  64%</span></div>
+        <div class="topbar">
+          <div class="icon">←</div>
+          <div class="title">记忆</div>
+          <div class="icon">↺</div>
+        </div>
+        <div class="feed">
+          <div class="ov-stats">
+            <div class="ov-stat"><b>28</b><span>活边</span></div>
+            <div class="ov-stat"><b>24</b><span>节点</span></div>
+            <div class="ov-stat"><b>4</b><span>经历</span></div>
+            <div class="ov-stat"><b>0</b><span>未消费</span></div>
+          </div>
+          <input class="ov-search" type="search" placeholder="搜节点、谓语、经历…" aria-label="搜索记忆" />
+          <div class="ov-chips" id="ov-chips">
+            <button type="button" class="on" data-filter="all">全部</button>
+            <button type="button" data-filter="me">我</button>
+            <button type="button" data-filter="project">项目</button>
+            <button type="button" data-filter="skill">技能</button>
+            <button type="button" data-filter="claim">经历</button>
+          </div>
+
+          <div class="block">
+            <div class="block-head">
+              <h4>焦点一跳 · 画布可拖</h4>
+              <button type="button" class="rel-toggle" id="rel-reset">复位 用户</button>
+            </div>
+            <div class="graph overview" id="ov-graph">
+              <svg viewBox="0 0 640 520" role="img" aria-label="活图总览">
+                <defs>
+                  <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b3d2b" />
+                  </marker>
+                </defs>
+                <line x1="88" y1="128" x2="168" y2="64" stroke="#8b3d2b" stroke-width="1.3" marker-end="url(#arr2)" />
+                <line x1="88" y1="140" x2="168" y2="140" stroke="#8b3d2b" stroke-width="1.3" marker-end="url(#arr2)" />
+                <line x1="88" y1="152" x2="168" y2="216" stroke="#8b3d2b" stroke-width="1.3" marker-end="url(#arr2)" />
+                <line x1="70" y1="164" x2="70" y2="214" stroke="#8b3d2b" stroke-width="1.2" marker-end="url(#arr2)" />
+                <line x1="52" y1="120" x2="28" y2="56" stroke="#8b3d2b" stroke-width="1.1" marker-end="url(#arr2)" />
+                <line x1="70" y1="116" x2="118" y2="36" stroke="#8b3d2b" stroke-width="1.1" marker-end="url(#arr2)" />
+                <line x1="56" y1="156" x2="16" y2="196" stroke="#8b3d2b" stroke-width="1.1" marker-end="url(#arr2)" />
+                <line x1="214" y1="56" x2="248" y2="28" stroke="#8b3d2b" stroke-width="1.1" marker-end="url(#arr2)" />
+                <line x1="220" y1="68" x2="258" y2="68" stroke="#8b3d2b" stroke-width="1.1" marker-end="url(#arr2)" />
+                <line x1="214" y1="80" x2="248" y2="108" stroke="#8b3d2b" stroke-width="1.1" marker-end="url(#arr2)" />
+                <line x1="214" y1="228" x2="258" y2="208" stroke="#8b3d2b" stroke-width="1.1" marker-end="url(#arr2)" />
+                <line x1="214" y1="236" x2="258" y2="246" stroke="#8b3d2b" stroke-width="1.1" marker-end="url(#arr2)" />
+                <text class="g-rel" x="118" y="86">参与过</text>
+                <text class="g-rel" x="112" y="134">参与过</text>
+                <text class="g-rel" x="108" y="194">参与过</text>
+                <text class="g-rel" x="74" y="198">求职方向</text>
+                <text class="g-rel" x="8" y="86">擅长</text>
+                <text class="g-rel" x="88" y="68">打算</text>
+                <text class="g-rel" x="8" y="172">工龄</text>
+                <text class="g-rel" x="220" y="36">组件</text>
+                <text class="g-rel" x="228" y="64">技术</text>
+                <text class="g-rel" x="220" y="100">技术</text>
+                <text class="g-rel" x="224" y="212">技术</text>
+                <text class="g-rel" x="224" y="252">技术</text>
+                <g class="g-node" data-focus="用户" data-cx="64" data-cy="140">
+                  <circle cx="64" cy="140" r="24" fill="#1c1916" />
+                  <text x="64" y="144" text-anchor="middle" fill="#fff" font-size="11">用户</text>
+                </g>
+                <g class="g-node" data-focus="车管家" data-cx="190" data-cy="64" data-open="ovnode">
+                  <circle cx="190" cy="64" r="20" fill="#8b3d2b" />
+                  <text x="190" y="68" text-anchor="middle" fill="#fff" font-size="10">车管家</text>
+                </g>
+                <g class="g-node" data-focus="鸿蒙重构" data-cx="190" data-cy="140">
+                  <circle cx="190" cy="140" r="18" fill="#6b5a48" />
+                  <text x="190" y="144" text-anchor="middle" fill="#fff" font-size="9">鸿蒙重构</text>
+                </g>
+                <g class="g-node" data-focus="网络 SDK" data-cx="190" data-cy="228">
+                  <circle cx="190" cy="228" r="18" fill="#6b5a48" />
+                  <text x="190" y="232" text-anchor="middle" fill="#fff" font-size="9">网络 SDK</text>
+                </g>
+                <g class="g-node">
+                  <rect x="36" y="220" width="68" height="22" rx="11" fill="#fff" stroke="#d9d2c5" />
+                  <text x="70" y="235" text-anchor="middle" font-size="9">客户端开发</text>
+                </g>
+                <g class="g-node">
+                  <rect x="4" y="28" width="44" height="20" rx="10" fill="#fff" stroke="#d9d2c5" />
+                  <text x="26" y="42" text-anchor="middle" font-size="9">安卓</text>
+                </g>
+                <g class="g-node">
+                  <rect x="104" y="14" width="40" height="20" rx="10" fill="#fff" stroke="#d9d2c5" />
+                  <text x="124" y="28" text-anchor="middle" font-size="9">跳槽</text>
+                </g>
+                <g class="g-node">
+                  <rect x="2" y="198" width="36" height="20" rx="10" fill="#fff" stroke="#d9d2c5" />
+                  <text x="20" y="212" text-anchor="middle" font-size="9">两年</text>
+                </g>
+                <g class="g-node">
+                  <rect x="248" y="16" width="64" height="20" rx="10" fill="#fff" stroke="#d9d2c5" />
+                  <text x="280" y="30" text-anchor="middle" font-size="9">卡片引擎</text>
+                </g>
+                <g class="g-node">
+                  <rect x="258" y="58" width="40" height="20" rx="10" fill="#fff" stroke="#d9d2c5" />
+                  <text x="278" y="72" text-anchor="middle" font-size="9">H5</text>
+                </g>
+                <g class="g-node">
+                  <rect x="246" y="100" width="66" height="20" rx="10" fill="#fff" stroke="#d9d2c5" />
+                  <text x="279" y="114" text-anchor="middle" font-size="9">JSBridge</text>
+                </g>
+                <g class="g-node">
+                  <rect x="258" y="198" width="40" height="20" rx="10" fill="#fff" stroke="#d9d2c5" />
+                  <text x="278" y="212" text-anchor="middle" font-size="9">Java</text>
+                </g>
+                <g class="g-node">
+                  <rect x="248" y="236" width="64" height="20" rx="10" fill="#fff" stroke="#d9d2c5" />
+                  <text x="280" y="250" text-anchor="middle" font-size="9">Retrofit</text>
+                </g>
+                <line x1="210" y1="140" x2="360" y2="140" stroke="#c4b6a8" stroke-width="1" stroke-dasharray="3 3" />
+                <line x1="190" y1="248" x2="190" y2="340" stroke="#c4b6a8" stroke-width="1" stroke-dasharray="3 3" />
+                <g class="g-node" data-focus="英语" data-cx="390" data-cy="139">
+                  <rect x="368" y="128" width="44" height="22" rx="11" fill="#fff" stroke="#d9d2c5" />
+                  <text x="390" y="143" text-anchor="middle" font-size="9">英语</text>
+                </g>
+                <g class="g-node" data-focus="Kotlin" data-cx="450" data-cy="139">
+                  <rect x="424" y="128" width="52" height="22" rx="11" fill="#fff" stroke="#d9d2c5" />
+                  <text x="450" y="143" text-anchor="middle" font-size="9">Kotlin</text>
+                </g>
+                <g class="g-node" data-focus="Compose" data-cx="515" data-cy="139">
+                  <rect x="486" y="128" width="58" height="22" rx="11" fill="#fff" stroke="#d9d2c5" />
+                  <text x="515" y="143" text-anchor="middle" font-size="9">Compose</text>
+                </g>
+                <g class="g-cluster" data-focus="技能" data-cx="443" data-cy="190">
+                  <rect x="400" y="172" width="86" height="36" rx="18" fill="#f3e4dc" stroke="#e2c4b6" stroke-dasharray="4 3" />
+                  <text x="443" y="194" text-anchor="middle" font-size="10" fill="#8b3d2b">技能 ×6</text>
+                </g>
+                <g class="g-node" data-focus="面试准备" data-cx="190" data-cy="359">
+                  <rect x="156" y="348" width="68" height="22" rx="11" fill="#fff" stroke="#d9d2c5" />
+                  <text x="190" y="363" text-anchor="middle" font-size="9">面试准备</text>
+                </g>
+                <text class="g-rel" x="300" y="132">擅长</text>
+                <text class="g-rel" x="198" y="300">打算</text>
+              </svg>
+              <div class="g-hud">
+                <b id="ov-focus">焦点 · 用户 · 画外还有 11</b>
+                <div class="g-tools">
+                  <button type="button" id="rel-toggle">标关系</button>
+                </div>
+              </div>
+            </div>
+            <div class="legend"><span>拖动画布看画外</span><span>点节点 / 点列表居中</span></div>
+          </div>
+
+          <div class="ov-group" data-kind="me project skill">活边 · 点一行，画布跳过去</div>
+          <div class="ov-row" data-kind="project" data-focus="车管家" data-cx="190" data-cy="64"><span>用户</span><em>参与过</em><span>车管家</span></div>
+          <div class="ov-row" data-kind="project" data-focus="鸿蒙重构" data-cx="190" data-cy="140"><span>用户</span><em>参与过</em><span>鸿蒙重构</span></div>
+          <div class="ov-row" data-kind="project" data-focus="网络 SDK" data-cx="190" data-cy="228"><span>用户</span><em>参与过</em><span>网络 SDK</span></div>
+          <div class="ov-row" data-kind="me"><span>用户</span><em>求职方向</em><span>客户端开发</span></div>
+          <div class="ov-row" data-kind="me"><span>用户</span><em>工龄</em><span>两年</span></div>
+          <div class="ov-row" data-kind="me"><span>用户</span><em>打算</em><span>跳槽</span></div>
+          <div class="ov-row" data-kind="skill"><span>用户</span><em>擅长</em><span>安卓</span></div>
+          <div class="ov-row" data-kind="project"><span>车管家</span><em>组件</em><span>卡片引擎</span></div>
+          <div class="ov-row" data-kind="skill"><span>车管家</span><em>技术</em><span>H5</span></div>
+          <div class="ov-row" data-kind="skill"><span>车管家</span><em>技术</em><span>JSBridge</span></div>
+          <div class="ov-row" data-kind="skill"><span>网络 SDK</span><em>技术</em><span>Java</span></div>
+          <div class="ov-row" data-kind="skill"><span>网络 SDK</span><em>技术</em><span>Retrofit</span></div>
+
+          <div class="ov-group" data-kind="claim">经历 · claims()</div>
+          <ul class="claim-list" data-kind="claim">
+            <li>车管家通过云端下发卡片并由车端动态渲染</li>
+            <li>鸿蒙项目用策略模式实现 Repository 的本地 / 网络加载</li>
+            <li>简历顺序：车管家第一，鸿蒙第二，SDK 垫底</li>
+            <li>准备时间不够，打算下周投</li>
+          </ul>
+        </div>
+        <div class="tabbar">
+          <span>对话</span>
+          <span class="on">记忆</span>
+        </div>
+
+        <div class="sheet" id="ovnode">
+          <div class="sheet-card">
+            <div class="sheet-head"><b>车管家</b><button class="x" type="button" data-close>×</button></div>
+            <div class="kv">
+              <div class="kv-row"><span>来源</span><b>facts() · 活边 4</b></div>
+              <div class="kv-row"><span>入图</span><b>worked_on / has_component / uses_technology</b></div>
+            </div>
+            <div class="ov-row"><span>用户</span><em>参与过</em><span>车管家</span></div>
+            <div class="ov-row"><span>车管家</span><em>组件</em><span>卡片引擎</span></div>
+            <div class="ov-row"><span>车管家</span><em>技术</em><span>H5 · JSBridge</span></div>
+            <ul class="claim-list">
+              <li>车管家通过云端下发卡片并由车端动态渲染</li>
+            </ul>
+            <button type="button" class="rel-toggle on" id="center-node" style="margin-top:12px">以此为中心</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <h3>总览是宿主页，不是 tool ack</h3>
+        <ul>
+          <li>入口在对话外：底栏「记忆」或侧栏。Playground 现在那块等宽事实文本，就是这一页该取代的。</li>
+          <li>数据直读 store：<code>facts(graphId)</code> 铺活边，<code>claims(graphId)</code> 铺经历，<code>unconsumed</code> 只做计数。不调 Agent。</li>
+          <li>画布是窗口，不是海报。一屏只保证当前<strong>焦点 + 一跳</strong>能看清。其余在画外，拖、捏、点列表去够。</li>
+          <li>开页焦点是「用户」。点节点或点三元组 = 相机居中到那个点。复位回用户。</li>
+          <li>同型太多先收成簇（「技能 ×6」），点开再铺。不在手机上做法导全图。</li>
+          <li>档位：大约 ≤12 节点可一次性 fit；再多就相机+一跳；50+ 不再布局全图，搜索和列表是主路径，图只画焦点邻域。</li>
+          <li>「标关系」仍可选。字只给视口里的边，画外的不标。</li>
+          <li>这些都是本地交互，不回 agent。</li>
+        </ul>
+        <div class="spec">{
+  "type": "graph",
+  "v": 1,
+  "props": {
+    "mode": "overview",
+    "graphId": "assistant",
+    "edges": [
+      {"s": "用户", "p": "worked_on", "o": "车管家"},
+      {"s": "用户", "p": "target_role", "o": "客户端开发"}
+    ],
+    "claims": [
+      {"subject": "车管家", "text": "云端下发卡片，车端渲染"}
+    ]
+  }
+}</div>
+        <p>宿主拼 spec，模型不写总览。坐标、聚类、中文谓语都归渲染器。空库就空状态，不编造节点。
+          小说另开两页：<a href="./memory-graph-novel.html">林晚总览</a> ·
+          <a href="./memory-novel-play.html">剧情演绎</a>。</p>
+      </div>
+    </div>
+
+    <h2>封闭集怎么铺进对话</h2>
+    <div class="catalog">
+      <div class="tile">
+        <div class="tag">tier 0 · inline</div>
+        <b>text / markdown + fallback</b>
+        <p>先跑通整条管。未知 type、缺字段、老版本，全部落到这段字。</p>
+      </div>
+      <div class="tile">
+        <div class="tag">tier 1 · inline / block</div>
+        <b>kv · table · card</b>
+        <p>高频结构化只读。kv 可进气泡；table 必须破泡。不引图表库。</p>
+      </div>
+      <div class="tile">
+        <div class="tag">tier 2 · block</div>
+        <b>chart bar / line / pie</b>
+        <p>第一个真视觉。数据是 series 和 label，配色走主题。</p>
+      </div>
+      <div class="tile">
+        <div class="tag">tier 3 · block / canvas</div>
+        <b>graph</b>
+        <p>知识图谱。总览画全量活边；对话里可复用同一 renderer 画一跳。Claim 作脚注。</p>
+      </div>
+      <div class="tile">
+        <div class="tag">tier 4</div>
+        <b>file · markdown / html</b>
+        <p>已生成 xx.md / xx.html，点开本屏渲染。HTML 是逃生口，沙箱 WebView，v1 关脚本关外网。</p>
+      </div>
+    </div>
+
+    <h2>和 WorkBuddy 对齐后的边界</h2>
+    <p>
+      过程条、赞踩朗读、来源、侧栏任务，都不进 <code>relay/ui-kit</code>。
+      引擎只做 <code>WidgetSpec → Compose</code>。Playground 胶水听 <code>ToolExecutionStart</code>：
+      名字有富渲染就画卡（table / chart / graph），否则画过程行。
+      <code>memory_query</code> 默认是 chip + 边列表；对话里要画邻域再包 <code>render_graph</code>。
+      总览不走这条管，宿主自己读库。
+    </p>
+    <p>
+      先验仍是：工具调用先稳定出现在回合里。图谱总览是另一块：让用户看见库里实际有什么。
+    </p>
+  </div>
+  <script>
+    document.querySelectorAll(".phone").forEach((phone) => {
+      phone.addEventListener("click", (event) => {
+        const open = event.target.closest("[data-open]");
+        const close = event.target.closest("[data-close]");
+        if (open) {
+          event.stopPropagation();
+          document.getElementById(open.dataset.open)?.classList.add("open");
+        }
+        if (close) close.closest(".sheet, .canvas").classList.remove("open");
+      });
+    });
+    const chips = document.getElementById("ov-chips");
+    const phone = document.getElementById("overview-phone");
+    if (chips && phone) {
+      chips.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-filter]");
+        if (!btn) return;
+        chips.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === btn));
+        const filter = btn.dataset.filter;
+        phone.querySelectorAll("[data-kind]").forEach((row) => {
+          const kinds = row.dataset.kind.split(/\s+/);
+          row.style.display = filter === "all" || kinds.includes(filter) ? "" : "none";
+        });
+      });
+      const relToggle = document.getElementById("rel-toggle");
+      const ovGraph = document.getElementById("ov-graph");
+      const ovSvg = ovGraph.querySelector("svg");
+      const ovFocus = document.getElementById("ov-focus");
+      let camX = 0;
+      let camY = 0;
+      let dragging = false;
+      let moved = 0;
+      let startX = 0;
+      let startY = 0;
+      let originX = 0;
+      let originY = 0;
+      const applyCam = () => {
+        ovSvg.style.transform = `translate(${camX}px, ${camY}px)`;
+      };
+      const focusTo = (cx, cy, name) => {
+        camX = ovGraph.clientWidth / 2 - Number(cx);
+        camY = ovGraph.clientHeight / 2 - Number(cy);
+        applyCam();
+        if (name) ovFocus.textContent = `焦点 · ${name}`;
+      };
+      focusTo(64, 140, "用户");
+      ovGraph.addEventListener("pointerdown", (event) => {
+        if (event.target.closest("button")) return;
+        dragging = true;
+        moved = 0;
+        startX = event.clientX;
+        startY = event.clientY;
+        originX = camX;
+        originY = camY;
+        ovGraph.classList.add("dragging");
+        ovGraph.setPointerCapture(event.pointerId);
+      });
+      ovGraph.addEventListener("pointermove", (event) => {
+        if (!dragging) return;
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+        moved += Math.abs(dx) + Math.abs(dy);
+        camX = originX + dx;
+        camY = originY + dy;
+        applyCam();
+      });
+      ovGraph.addEventListener("pointerup", () => {
+        dragging = false;
+        ovGraph.classList.remove("dragging");
+      });
+      ovGraph.addEventListener("click", (event) => {
+        if (moved > 8) {
+          event.stopPropagation();
+          return;
+        }
+        const node = event.target.closest("[data-focus][data-cx]");
+        if (!node) return;
+        focusTo(node.dataset.cx, node.dataset.cy, node.dataset.focus);
+      }, true);
+      document.getElementById("rel-reset")?.addEventListener("click", () => {
+        focusTo(64, 140, "用户");
+      });
+      document.getElementById("center-node")?.addEventListener("click", () => {
+        focusTo(190, 64, "车管家");
+        document.getElementById("ovnode").classList.remove("open");
+      });
+      phone.addEventListener("click", (event) => {
+        const row = event.target.closest(".ov-row[data-focus]");
+        if (!row) return;
+        focusTo(row.dataset.cx, row.dataset.cy, row.dataset.focus);
+        phone.querySelector(".feed").scrollTop = 0;
+      });
+      relToggle?.addEventListener("click", () => {
+        const on = !ovGraph.classList.contains("show-rel");
+        ovGraph.classList.toggle("show-rel", on);
+        relToggle.classList.toggle("on", on);
+      });
+      phone.querySelector(".ov-search").addEventListener("input", (event) => {
+        const q = event.target.value.trim();
+        phone.querySelectorAll(".ov-row, .claim-list li").forEach((row) => {
+          row.style.display = !q || row.textContent.includes(q) ? "" : "none";
+        });
+      });
+    }
+  </script>
+</body>
+</html>
