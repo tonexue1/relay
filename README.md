@@ -16,15 +16,25 @@ Android 原生的 Agent 运行时：**运行时、私有记忆、原生 UI 住�
 
 ## 模块
 
-| 模块 | 职责 |
-|---|---|
-| `relay/llm` | `Provider` 端口、OpenAI 兼容云实现、拦截器 |
-| `relay/ondevice` | llama.cpp（arm64 JNI）端侧推理，可选 |
-| `relay/agent-core` | Agent 循环、工具、上下文编排 |
-| `relay/memory` | 端上记忆存储与检索 |
-| `relay/orchestra` | 多 Agent 拓扑 |
-| `relay/artifacts` | 生成物模型与校验 |
-| `relay/ui-kit` | Compose 对话 / 控件 |
+每篇写清：**提供什么 API、能力边界、依赖了什么**。点模块名跳转。
+
+```
+宿主 App
+  ├─ ui-kit ──────────────► artifacts
+  ├─ orchestra ──► agent-core ──► llm ◄── ondevice
+  ├─ memory ─────► agent-core
+  └─ agent-core
+```
+
+| 模块 | 形态 | 一句话 |
+|---|---|---|
+| [`llm`](relay/llm/README.md) | jar | `Provider` 端口、云实现、拦截器 |
+| [`ondevice`](relay/ondevice/README.md) | AAR | llama.cpp，可选端侧 `Provider` |
+| [`agent-core`](relay/agent-core/README.md) | jar | 单 agent 循环与工具 |
+| [`memory`](relay/memory/README.md) | AAR | 端上账本与召回 |
+| [`orchestra`](relay/orchestra/README.md) | jar | Pipeline / Supervisor / GroupChat / Director |
+| [`artifacts`](relay/artifacts/README.md) | jar | 带版本的生成物仓库 |
+| [`ui-kit`](relay/ui-kit/README.md) | AAR | Compose 把 spec 画进对话 |
 
 样例 App（`samples/`）：
 
