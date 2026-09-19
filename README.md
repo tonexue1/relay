@@ -2,7 +2,7 @@
 
 Android 原生的 Agent 运行时：**运行时、私有记忆、原生 UI 住在设备里，模型放在云端。**
 
-对标位置接近 OkHttp / Coil——给 App 开发者 `implementation` 进去的基础库，而不是又一个聊天套壳。当前版本 **0.1.0**，以 Gradle 多模块源码集成，尚未发布到 Maven Central。
+对标位置接近 OkHttp / Coil——给 App 开发者 `implementation` 进去的基础库，而不是又一个聊天套壳。当前版本 **0.1.0**，已发布到 [GitHub Packages](https://github.com/tonexue1/relay/packages)，尚未上 Maven Central。
 
 ## 能做什么
 
@@ -91,13 +91,59 @@ relay.deepseek.apiKey=sk-...
 
 ## 在应用里引用
 
-当前按源码模块依赖，例如：
+源码模块：
 
 ```kotlin
 implementation(project(":relay:llm"))
 implementation(project(":relay:agent-core"))
 implementation(project(":relay:memory"))
 implementation(project(":relay:ui-kit"))
+```
+
+GitHub Packages（`io.github.tonexue1:relay-*:0.1.0`）。GitHub 即使仓库公开也要求 Maven 带 token（`read:packages`）。在 `~/.gradle/gradle.properties` 写：
+
+```
+gpr.user=YOUR_GITHUB_USERNAME
+gpr.key=YOUR_GITHUB_TOKEN
+```
+
+`settings.gradle.kts`：
+
+```kotlin
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/tonexue1/relay")
+            credentials {
+                username = providers.gradleProperty("gpr.user").get()
+                password = providers.gradleProperty("gpr.key").get()
+            }
+        }
+    }
+}
+```
+
+```kotlin
+implementation("io.github.tonexue1:relay-llm:0.1.0")
+implementation("io.github.tonexue1:relay-agent-core:0.1.0")
+implementation("io.github.tonexue1:relay-memory:0.1.0")       // AAR, minSdk 28
+implementation("io.github.tonexue1:relay-ui-kit:0.1.0")       // AAR, Compose
+implementation("io.github.tonexue1:relay-orchestra:0.1.0")
+implementation("io.github.tonexue1:relay-artifacts:0.1.0")
+implementation("io.github.tonexue1:relay-ondevice:0.1.0")     // AAR, arm64 llama.cpp
+```
+
+本仓库发布：
+
+```bash
+# 先装到本机 ~/.m2
+./gradlew publishToMavenLocal
+
+# 推到 GitHub Packages（token 同上，或环境变量 GITHUB_ACTOR / GITHUB_TOKEN）
+./gradlew publish
 ```
 
 `Provider` 只表示「一个模型后端」。缓存、重试、指标走拦截器；端云路由是宿主策略，不写进 `Provider`。

@@ -6,3 +6,9 @@ plugins {
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.ksp) apply false
 }
+
+subprojects {
+    if (path.startsWith(":relay:")) {
+        apply(from = rootProject.file("gradle/relay-publish.gradle.kts"))
+    }
+}
